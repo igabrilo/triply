@@ -25,10 +25,15 @@ export default function Navbar() {
         </Link>
 
         {/* Desktop Nav Links */}
-        {isHome && (
+        {isHome ? (
           <div className="navbar-links hide-mobile">
             <a href="#how-it-works" className="navbar-link">How it works</a>
             <a href="#pricing" className="navbar-link">Pricing</a>
+          </div>
+        ) : (
+          <div className="navbar-links hide-mobile">
+            <Link to="/#how-it-works" className="navbar-link">How it works</Link>
+            <Link to="/#pricing" className="navbar-link">Pricing</Link>
           </div>
         )}
 
@@ -76,10 +81,15 @@ export default function Navbar() {
             style={{ overflow: 'hidden' }}
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {isHome && (
+              {isHome ? (
                 <>
-                  <a href="#how-it-works" className="navbar-link">How it works</a>
-                  <a href="#pricing" className="navbar-link">Pricing</a>
+                  <a href="#how-it-works" className="navbar-link" onClick={() => setMobileOpen(false)}>How it works</a>
+                  <a href="#pricing" className="navbar-link" onClick={() => setMobileOpen(false)}>Pricing</a>
+                </>
+              ) : (
+                <>
+                  <Link to="/#how-it-works" className="navbar-link" onClick={() => setMobileOpen(false)}>How it works</Link>
+                  <Link to="/#pricing" className="navbar-link" onClick={() => setMobileOpen(false)}>Pricing</Link>
                 </>
               )}
               {isAuthenticated ? (

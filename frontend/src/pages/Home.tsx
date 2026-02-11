@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import Layout from '@components/layout/Layout';
 import HeroSection from '@components/home/HeroSection';
 import TripForm from '@components/home/TripForm';
@@ -10,6 +11,16 @@ import { useTripStore } from '@/store/tripStore';
 
 export default function Home() {
   const { isGenerating } = useTripStore();
+
+  // Scroll to section when landing with hash (e.g. from /#how-it-works)
+  useEffect(() => {
+    const hash = window.location.hash?.slice(1);
+    if (!hash) return;
+    const el = document.getElementById(hash);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, []);
 
   return (
     <Layout showBlobs>

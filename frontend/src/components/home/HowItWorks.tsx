@@ -9,12 +9,13 @@ const steps = [
 export default function HowItWorks() {
   return (
     <motion.div
+      id="how-it-works"
       initial={{ opacity: 0, y: 40 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-100px', amount: 0.3 }}
       transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
       className="card card-hover"
-      style={{ maxWidth: 540, margin: '0 auto', padding: '24px 28px' }}
+      style={{ maxWidth: 540, margin: '0 auto', padding: '24px 28px', scrollMarginTop: 80 }}
     >
       <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--navy-950)', marginBottom: 20 }}>
         How it works
