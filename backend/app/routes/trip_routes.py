@@ -4,8 +4,8 @@ from app.services.auth_service import AuthService
 from app.services.trip_service import TripService
 
 
-def get_authenticated_user():
-    """Helper to extract user from token."""
+def _get_user():
+    """Helper to extract authenticated user from token."""
     token = request.headers.get('Authorization', '').replace('Bearer ', '')
     if not token:
         return None
@@ -15,7 +15,7 @@ def get_authenticated_user():
 @api_bp.route('/trips', methods=['POST'])
 def create_trip():
     """Create a new trip (save generated results)."""
-    user = get_authenticated_user()
+    user = _get_user()
     if not user:
         return jsonify({'success': False, 'message': 'Authentication required'}), 401
 
@@ -23,42 +23,42 @@ def create_trip():
     if not data or 'formData' not in data:
         return jsonify({'success': False, 'message': 'Form data is required'}), 400
 
-    result = TripService.create_trip(user.id, data)
-    return jsonify({'success': True, 'trip': result.to_dict()}), 201
+    trip = TripService.create_trip(str(user.id), data)
+    return jsonify({'success': True, 'trip': trip.to_dict(include_details=True)}), 201
 
 
 @api_bp.route('/trips', methods=['GET'])
 def get_trips():
-    """Get all trips for the authenticated user."""
-    user = get_authenticated_user()
+    """Get all trips for the authenticated user (summary list)."""
+    user = _get_user()
     if not user:
         return jsonify({'success': False, 'message': 'Authentication required'}), 401
 
-    trips = TripService.get_user_trips(user.id)
+    trips = TripService.get_user_trips(str(user.id))
     return jsonify({
         'success': True,
-        'trips': [t.to_dict() for t in trips]
+        'trips': [t.to_dict() for t in trips],
     }), 200
 
 
-@api_bp.route('/trips/<int:trip_id>', methods=['GET'])
+@api_bp.route('/trips/<trip_id>', methods=['GET'])
 def get_trip(trip_id):
-    """Get a specific trip."""
-    user = get_authenticated_user()
+    """Get a specific trip with full details."""
+    user = _get_user()
     if not user:
         return jsonify({'success': False, 'message': 'Authentication required'}), 401
 
-    trip = TripService.get_trip(trip_id, user.id)
+    trip = TripService.get_trip(trip_id, str(user.id))
     if not trip:
         return jsonify({'success': False, 'message': 'Trip not found'}), 404
 
-    return jsonify({'success': True, 'trip': trip.to_dict()}), 200
+    return jsonify({'success': True, 'trip': trip.to_dict(include_details=True)}), 200
 
 
-@api_bp.route('/trips/<int:trip_id>', methods=['PUT'])
+@api_bp.route('/trips/<trip_id>', methods=['PUT'])
 def update_trip(trip_id):
-    """Update a trip section (scoped edit)."""
-    user = get_authenticated_user()
+    """Update a trip (scoped edit)."""
+    user = _get_user()
     if not user:
         return jsonify({'success': False, 'message': 'Authentication required'}), 401
 
@@ -66,21 +66,21 @@ def update_trip(trip_id):
     if not data:
         return jsonify({'success': False, 'message': 'No data provided'}), 400
 
-    trip = TripService.update_trip(trip_id, user.id, data)
+    trip = TripService.update_trip(trip_id, str(user.id), data)
     if not trip:
         return jsonify({'success': False, 'message': 'Trip not found'}), 404
 
-    return jsonify({'success': True, 'trip': trip.to_dict()}), 200
+    return jsonify({'success': True, 'trip': trip.to_dict(include_details=True)}), 200
 
 
-@api_bp.route('/trips/<int:trip_id>', methods=['DELETE'])
+@api_bp.route('/trips/<trip_id>', methods=['DELETE'])
 def delete_trip(trip_id):
     """Delete a trip."""
-    user = get_authenticated_user()
+    user = _get_user()
     if not user:
         return jsonify({'success': False, 'message': 'Authentication required'}), 401
 
-    deleted = TripService.delete_trip(trip_id, user.id)
+    deleted = TripService.delete_trip(trip_id, str(user.id))
     if not deleted:
         return jsonify({'success': False, 'message': 'Trip not found'}), 404
 

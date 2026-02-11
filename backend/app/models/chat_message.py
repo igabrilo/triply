@@ -1,38 +1,41 @@
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import Uuid
+
 from app import db
-from datetime import datetime
-import json
 
 
 class ChatMessage(db.Model):
-    """Chat message model for edit history per trip."""
+    """Single message inside a chat thread."""
     __tablename__ = 'chat_messages'
 
-    id = db.Column(db.Integer, primary_key=True)
-    trip_id = db.Column(db.Integer, db.ForeignKey('trips.id'), nullable=False, index=True)
+    id = db.Column(Uuid, primary_key=True, default=uuid.uuid4)
+    thread_id = db.Column(Uuid, db.ForeignKey('chat_threads.id', ondelete='CASCADE'), nullable=False, index=True)
 
-    role = db.Column(db.String(20), nullable=False)  # user | assistant | system
+    role = db.Column(db.Text, nullable=False)                   # user | assistant | system
+    scope = db.Column(db.Text, nullable=True)                   # flights | stays | plan | day | item
+    target_ref_type = db.Column(db.Text, nullable=True)         # trip_day | plan_item | flight_option | …
+    target_ref_id = db.Column(Uuid, nullable=True)
+
     content = db.Column(db.Text, nullable=False)
+    context_snapshot = db.Column(db.JSON, nullable=True)
 
-    # Edit scope (optional, JSON)
-    edit_scope_json = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    @property
-    def edit_scope(self):
-        return json.loads(self.edit_scope_json) if self.edit_scope_json else None
-
-    @edit_scope.setter
-    def edit_scope(self, value):
-        self.edit_scope_json = json.dumps(value) if value else None
+    # --- Relationships ---
+    thread = db.relationship('ChatThread', back_populates='messages')
 
     def to_dict(self):
         return {
             'id': str(self.id),
-            'tripId': str(self.trip_id),
+            'threadId': str(self.thread_id),
             'role': self.role,
+            'scope': self.scope,
+            'targetRefType': self.target_ref_type,
+            'targetRefId': str(self.target_ref_id) if self.target_ref_id else None,
             'content': self.content,
-            'editScope': self.edit_scope,
+            'contextSnapshot': self.context_snapshot,
             'timestamp': self.created_at.isoformat() if self.created_at else None,
         }
 

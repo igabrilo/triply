@@ -1,6 +1,19 @@
 version: '3.8'
 
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: triply-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: triply
+      POSTGRES_PASSWORD: triply_dev
+      POSTGRES_DB: triply
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
   backend:
     build: ./backend
     container_name: triply-backend
@@ -8,10 +21,15 @@ services:
       - "5001:5000"
     environment:
       - FLASK_ENV=development
-      - DATABASE_URL=sqlite:///triply.db
+      - DATABASE_URL=postgresql://triply:triply_dev@db:5432/triply
+      - SECRET_KEY=dev-secret-key-change-in-production
     volumes:
       - ./backend:/app
-    command: python run.py
+    command: >
+      sh -c "flask db upgrade && python run.py"
+    depends_on:
+      db:
+        condition: service_started
 
   frontend:
     build: ./frontend
@@ -27,3 +45,6 @@ services:
     command: sh -c "npm install && npm run dev -- --host"
     depends_on:
       - backend
+
+volumes:
+  pgdata:

@@ -1,8 +1,11 @@
 import jwt
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
 from app import db
 from app.models.user import User
+from app.models.user_preferences import UserPreferences
+from app.models.notification_preferences import NotificationPreferences
 
 
 class AuthService:
@@ -13,17 +16,21 @@ class AuthService:
 
     @staticmethod
     def register(name: str, email: str, password: str) -> dict:
-        """Register a new user."""
+        """Register a new user and provision default preference rows."""
         if User.query.filter_by(email=email).first():
             return {'success': False, 'message': 'Email already registered'}
 
         user = User(name=name, email=email)
         user.set_password(password)
 
+        # Create default preference rows
+        user.preferences = UserPreferences()
+        user.notification_preferences = NotificationPreferences()
+
         db.session.add(user)
         db.session.commit()
 
-        token = AuthService._generate_token(user.id)
+        token = AuthService._generate_token(str(user.id))
         return {
             'success': True,
             'user': user.to_dict(),
@@ -37,7 +44,7 @@ class AuthService:
         if not user or not user.check_password(password):
             return {'success': False, 'message': 'Invalid email or password'}
 
-        token = AuthService._generate_token(user.id)
+        token = AuthService._generate_token(str(user.id))
         return {
             'success': True,
             'user': user.to_dict(),
@@ -52,16 +59,16 @@ class AuthService:
             user_id = payload.get('user_id')
             if not user_id:
                 return None
-            return User.query.get(user_id)
+            return db.session.get(User, user_id)
         except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
             return None
 
     @staticmethod
-    def _generate_token(user_id: int) -> str:
+    def _generate_token(user_id: str) -> str:
         """Generate a JWT token."""
         payload = {
             'user_id': user_id,
-            'exp': datetime.utcnow() + timedelta(hours=AuthService.TOKEN_EXPIRY_HOURS),
-            'iat': datetime.utcnow(),
+            'exp': datetime.now(timezone.utc) + timedelta(hours=AuthService.TOKEN_EXPIRY_HOURS),
+            'iat': datetime.now(timezone.utc),
         }
         return jwt.encode(payload, AuthService.SECRET_KEY, algorithm='HS256')

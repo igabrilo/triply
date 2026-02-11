@@ -1,69 +1,66 @@
-from app import db
-from datetime import datetime
+import uuid
+from datetime import datetime, timezone
+
 import bcrypt
-import json
+from sqlalchemy import Uuid
+
+from app import db
 
 
 class User(db.Model):
     """User model for authentication and profile."""
     __tablename__ = 'users'
 
-    id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(255), unique=True, nullable=False, index=True)
-    name = db.Column(db.String(150), nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
-    avatar_url = db.Column(db.String(500), nullable=True)
+    id = db.Column(Uuid, primary_key=True, default=uuid.uuid4)
+    email = db.Column(db.Text, unique=True, nullable=False, index=True)
+    name = db.Column(db.Text, nullable=False)
+    password_hash = db.Column(db.Text, nullable=False)
+    avatar_url = db.Column(db.Text, nullable=True)
 
-    # Stored preferences (opt-in, JSON)
-    preferences_json = db.Column(db.Text, nullable=True)
-    preferences_opted_in = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
-    # Notification settings
-    notify_price_alerts = db.Column(db.Boolean, default=True)
-    notify_trip_reminders = db.Column(db.Boolean, default=True)
-    notify_feature_updates = db.Column(db.Boolean, default=True)
-    notify_marketing = db.Column(db.Boolean, default=False)
+    # --- Relationships ---
+    preferences = db.relationship(
+        'UserPreferences', back_populates='user', uselist=False, cascade='all, delete-orphan',
+    )
+    notification_preferences = db.relationship(
+        'NotificationPreferences', back_populates='user', uselist=False, cascade='all, delete-orphan',
+    )
+    trips = db.relationship('Trip', back_populates='user', lazy='dynamic', cascade='all, delete-orphan')
+    subscriptions = db.relationship('Subscription', back_populates='user', lazy='dynamic', cascade='all, delete-orphan')
+    price_alerts = db.relationship('PriceAlert', back_populates='user', lazy='dynamic', cascade='all, delete-orphan')
+    usage_events = db.relationship('UsageEvent', back_populates='user', lazy='dynamic')
+    notification_events = db.relationship('NotificationEvent', back_populates='user', lazy='dynamic')
 
-    # Subscription
-    subscription_tier = db.Column(db.String(20), default='free')  # free | premium
-    generations_used = db.Column(db.Integer, default=0)
-
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    # Relationships
-    trips = db.relationship('Trip', backref='user', lazy='dynamic')
-
+    # --- Password helpers ---
     def set_password(self, password: str):
         self.password_hash = bcrypt.hashpw(
-            password.encode('utf-8'), bcrypt.gensalt()
+            password.encode('utf-8'), bcrypt.gensalt(),
         ).decode('utf-8')
 
     def check_password(self, password: str) -> bool:
         return bcrypt.checkpw(
             password.encode('utf-8'),
-            self.password_hash.encode('utf-8')
+            self.password_hash.encode('utf-8'),
         )
 
-    @property
-    def preferences(self):
-        if self.preferences_json:
-            return json.loads(self.preferences_json)
-        return None
-
-    @preferences.setter
-    def preferences(self, value):
-        self.preferences_json = json.dumps(value) if value else None
-
+    # --- Serialization ---
     def to_dict(self):
         return {
             'id': str(self.id),
             'email': self.email,
             'name': self.name,
             'avatar': self.avatar_url,
-            'preferences': self.preferences,
-            'subscription_tier': self.subscription_tier,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'preferences': self.preferences.to_dict() if self.preferences else None,
+            'notificationPreferences': (
+                self.notification_preferences.to_dict() if self.notification_preferences else None
+            ),
+            'createdAt': self.created_at.isoformat() if self.created_at else None,
         }
 
     def __repr__(self):
