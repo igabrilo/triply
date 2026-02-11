@@ -1,36 +1,29 @@
-import { useState, useEffect } from 'react'
-import { apiClient } from '@services/api'
+import Layout from '@components/layout/Layout';
+import HeroSection from '@components/home/HeroSection';
+import TripForm from '@components/home/TripForm';
+import FeaturesSection from '@components/home/FeaturesSection';
+import HowItWorks from '@components/home/HowItWorks';
+import PricingSection from '@components/home/PricingSection';
+import Footer from '@components/home/Footer';
+import GeneratingOverlay from '@components/ui/GeneratingOverlay';
+import { useTripStore } from '@/store/tripStore';
 
-function Home() {
-  const [message, setMessage] = useState<string>('')
-  const [loading, setLoading] = useState<boolean>(true)
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const response = await apiClient.get('/')
-        setMessage(response.data.message)
-      } catch (error) {
-        console.error('Error fetching data:', error)
-        setMessage('Failed to connect to backend')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchData()
-  }, [])
+export default function Home() {
+  const { isGenerating } = useTripStore();
 
   return (
-    <div className="home">
-      <h1>Welcome to Triply</h1>
-      {loading ? (
-        <p>Loading...</p>
-      ) : (
-        <p>Backend says: {message}</p>
-      )}
-    </div>
-  )
-}
+    <Layout showBlobs>
+      <div className="px-4 sm:px-6 lg:px-8 pt-48 pb-16 sm:pt-56 sm:pb-24" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+        <HeroSection />
+        <TripForm />
+        <FeaturesSection />
+        <HowItWorks />
+        <PricingSection />
+        <Footer />
+      </div>
 
-export default Home
+      {/* Generating Overlay */}
+      {isGenerating && <GeneratingOverlay />}
+    </Layout>
+  );
+}

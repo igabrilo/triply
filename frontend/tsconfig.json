@@ -31,7 +31,8 @@
       "@types/*": ["src/types/*"],
       "@services/*": ["src/services/*"],
       "@assets/*": ["src/assets/*"],
-      "@styles/*": ["src/styles/*"]
+      "@styles/*": ["src/styles/*"],
+      "@store/*": ["src/store/*"]
     }
   },
   "include": ["src"],
