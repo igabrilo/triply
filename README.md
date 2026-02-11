@@ -1,8 +1,151 @@
-# triply
-One billion startup
-https://trippiz-ae8ac518.base44.app
+# Triply
 
-Design a frontend-first concept for a mobile-first web app (responsive) called Trippiz: an AI Travel Planner that behaves like a concierge. I want a detailed UI/UX blueprint: information architecture, screens, components, and key user flows. Do not focus on backend implementation—focus on how the app looks and works from the user’s perspective.
+Triply is a travel planner app with a **React/Vite** frontend and a **Flask** backend backed by **PostgreSQL** (normalized schema, managed via **Flask-Migrate/Alembic**).
 
-Goals The app collects trip preferences via smart follow-up questions and generates: destination overview + neighborhood suggestions accommodation recommendations with deep links to booking sites flight suggestions with price tracking + alerts a day-by-day itinerary that is route-aware, pace-aware, and weather-aware experiences with ticket purchase links and “book in advance” reminders Free model with non-annoying contextual ads + optional upgrades (ad-free, offline downloads, price alerts, collaboration). Deliverable Format I Want From You High-level product summary (1–2 paragraphs) User personas (at least 3: solo traveler, couple city break, family) Information architecture / sitemap Primary user flows (step-by-step) Screen-by-screen UI spec (layout + key components + states) Component library (reusable UI blocks) Empty / loading / error states Ad placements strategy (native + labeled, where they appear) Accessibility considerations Optional: microcopy examples (button labels, prompts, confirmations) Key Screens You Must Design (Frontend) A) Onboarding & Trip Intake (AI Concierge) Welcome screen with value proposition + “Start planning” Sign in / guest mode (guest allowed) Trip basics: destination(s), dates, travelers, budget range Adaptive follow-up questions UI: interests chips (food, museums, nightlife, nature, shopping, beaches) pace selector (relaxed / balanced / packed) accommodation style (hotel, apartment, hostel) + deal-breakers mobility/accessibility needs dietary preferences safety comfort level “what’s fixed?” inputs (events, must-do, must-eat, hotel already booked) Progress indicator and “Why we ask this” tooltips Consent toggle for “Remember my preferences for next time” (opt-in) B) Results Dashboard (Trip Overview) A “Trip dashboard” landing page after generation with: trip summary card (dates, city, travelers) budget estimate + breakdown weather snapshot for the dates (and a disclaimer) neighborhood recommendations (map + cards) quick actions: Flights, Stay, Itinerary, Experiences, Checklist C) Accommodation Finder (Shortlist + Compare) Filter bar: price, rating, distance to center, “walkable”, “quiet”, “family friendly”, refundability Result cards with: photo carousel, rating, “why this matches you” neighborhood tag + map preview “View on Booking/Airbnb/etc” deep link CTA save/shortlist Compare view (2–3 items side-by-side) D) Flights + Price Tracking Flight results UI (list + sort) “Price tracking” toggle with threshold slider + notification preferences Saved flights + alerts panel E) Day-by-Day Itinerary Builder Timeline view per day (morning/afternoon/evening) Map view toggle (route-aware) Cards include: place, time window, travel time, cost, reservation/ticket status Controls: pace knob (regenerates) “swap” activity “add break” drag-and-drop reorder Weather-aware mode: if rain, propose indoor swaps Crowd-aware tips: “go early to avoid queues” Multiple itinerary variants tabs: Culture / Food / Nature / Budget F) Experiences + Tickets Experiences list with categories Each experience card includes: “book ahead” indicator deep link CTA to buy tickets (GetYourGuide/Viator/Tiqets/official) refundability note “Add to Day X” action G) Budget Dashboard Total estimate + per-day average Breakdown categories + adjustable sliders “Cost knobs” that regenerate suggestions (cheaper stay, fewer paid attractions, etc.) H) Logistics Hub Checklist: passport/visa/insurance/vaccines Packing list generator screen (based on weather + activities) eSIM/SIM suggestions section Power plug, tipping norms, emergency numbers Safety notes (with clear sourcing) I) Today Mode (In-Destination) “Today” screen optimized for walking around: timeline for today big map button quick actions: nearby food, restroom, pharmacy, ATM, taxi offline access indicator tickets/QR codes/addresses accessible in 1 tap J) Collaboration & Sharing Invite travel companions Poll/vote on options (hotels, activities) Commenting on itinerary items Share link permissions (view/comment/edit) Export: Google Calendar / Apple Calendar, PDF, map list K) Profile & Preferences Saved preferences (opt-in) Past trips Notification settings (price alerts, reminders) Subscription/upgrade page (optional) Design Requirements Style: modern, clean, travel-inspired. Provide two theme directions: premium concierge (dark accents + elegant typography) playful friendly (bright accents + rounded cards) UI patterns: bottom navigation (mobile) + left sidebar (desktop) Use clear hierarchy: cards, chips, maps, timelines. Provide specific component suggestions (chips, steppers, skeleton loaders, modals, drawers). Include states: loading generation (“crafting itinerary…”), empty shortlist, errors, offline mode, no-results filters. Ads + Monetization (Frontend) Free plan includes native labeled ad cards in: flights results (1 per ~10 items) stays results (1 per ~10 items) experiences feed (1 per ~8 items) logistics hub (eSIM/insurance) as “Recommended partner” Must be clearly labeled “Sponsored” and never block core tasks. Upgrade screen: “Ad-free + Offline + Price Alerts + Collaboration”. Output Style Present the screens as a structured list. For each screen include: purpose, layout sections, key components, primary CTAs, and important edge states. Include at least 8–12 screens and at least 3 primary flows.
+More detail in wiki page.
+
+Base44: https://trippiz-ae8ac518.base44.app
+
+## Repo layout
+
+- `frontend/`: React + Vite app
+- `backend/`: Flask API + SQLAlchemy models + Alembic migrations
+- `docker-compose.yml`: local dev stack (db + backend + frontend)
+
+## Prerequisites
+
+- Docker + Docker Compose
+- (Optional) Python 3.11+ if you want to run backend outside Docker
+- (Optional) Node 18+ if you want to run frontend outside Docker
+
+## Quickstart (recommended: Docker)
+
+From repo root:
+
+```bash
+docker compose up --build
+```
+
+Services/ports:
+
+- **Frontend**: `http://localhost:3000`
+- **Backend API**: `http://localhost:5001/api`
+- **PostgreSQL**: `localhost:5432` (user: `triply`, password: `triply_dev`, db: `triply`)
+
+The backend container runs migrations on startup:
+
+- `flask db upgrade` then `python run.py` (see `docker-compose.yml`)
+
+## Environment variables
+
+### Backend
+
+- `SECRET_KEY`: used for signing JWTs (dev default exists; change in production)
+- `DATABASE_URL`: SQLAlchemy database URL
+- `CORS_ORIGINS`: comma-separated origins (defaults to `http://localhost:3000`)
+
+See `backend/.env.example`.
+
+### Frontend
+
+- `VITE_API_URL`: API base path (in Docker we use `/api`)
+- `VITE_PROXY_TARGET`: dev proxy target (in Docker: `http://backend:5000`)
+
+See `frontend/.env.example` and `frontend/vite.config.ts`.
+
+## Database & migrations
+
+Migrations live in:
+
+- `backend/migrations/`
+- initial schema migration: `backend/migrations/versions/b47b91689d38_initial.py`
+
+Useful commands (Docker):
+
+```bash
+docker exec triply-backend flask db current
+docker exec triply-backend flask db history
+docker exec triply-backend flask db upgrade
+docker exec triply-backend flask db downgrade -1
+```
+
+If you change models and need a new migration:
+
+```bash
+docker exec triply-backend flask db migrate -m "describe change"
+docker exec triply-backend flask db upgrade
+```
+
+## Backend API (high level)
+
+Base: `/api`
+
+- `GET /` health check
+- `POST /auth/register` register user
+- `POST /auth/login` login (returns JWT)
+- `GET /auth/me` current user (JWT required)
+- `POST /trips` create trip (JWT required)
+- `GET /trips` list trips (JWT required)
+- `GET /trips/<trip_id>` get trip (JWT required)
+- `PUT /trips/<trip_id>` update trip (JWT required)
+- `DELETE /trips/<trip_id>` delete trip (JWT required)
+- `GET /trips/<trip_id>/chat` chat history (JWT required)
+- `POST /trips/<trip_id>/chat` send chat message (JWT required)
+
+## Running without Docker (optional)
+
+### Backend (local)
+
+1) Create a virtualenv and install deps:
+
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+2) Point `DATABASE_URL` to a PostgreSQL instance and run migrations:
+
+```bash
+export DATABASE_URL="postgresql://triply:triply_dev@localhost:5432/triply"
+flask db upgrade
+python run.py
+```
+
+To provision a local `triply` role/db (if you’re not using Docker PostgreSQL), you can run:
+
+```bash
+psql -U <your_pg_superuser> -f backend/scripts/init_db.sql
+```
+
+### Frontend (local)
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+## Testing
+
+Backend tests (pytest):
+
+```bash
+cd backend
+pytest
+```
+
+## Troubleshooting
+
+### “role triply does not exist” when connecting to localhost:5432
+
+On macOS it’s common to have **two** PostgreSQL servers: one local (Homebrew) and one in Docker.
+If local Postgres is bound to `localhost:5432`, your host `psql` might hit the local instance instead of Docker.
+
+Options:
+
+- Stop local Postgres (Homebrew service), then use Docker’s `localhost:5432`
+- Or change Docker’s published port (e.g. map `5433:5432`) if you need both running
+- Or use `docker exec triply-db psql ...` to always connect to the Docker database
 
