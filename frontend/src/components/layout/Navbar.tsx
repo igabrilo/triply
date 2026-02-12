@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 
 export default function Navbar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { isAuthenticated, user, openAuthModal, logout } = useAuthStore();
   const [mobileOpen, setMobileOpen] = useState(false);
   const isHome = location.pathname === '/';
@@ -41,18 +42,18 @@ export default function Navbar() {
         <div className="navbar-actions hide-mobile">
           {isAuthenticated ? (
             <>
-              <Link to="/dashboard" className="navbar-link">My Trips</Link>
+              <Link to="/account" className="navbar-link">My Trips</Link>
               <button onClick={logout} className="navbar-link">Sign out</button>
-              <div className="avatar avatar-sm">
+              <Link to="/account" className="avatar avatar-sm" style={{ textDecoration: 'none' }}>
                 {user?.name?.charAt(0).toUpperCase() || 'U'}
-              </div>
+              </Link>
             </>
           ) : (
             <>
-              <button onClick={() => openAuthModal('signin')} className="navbar-link">
+              <button onClick={() => openAuthModal('signin', () => navigate('/account'))} className="navbar-link">
                 Sign in
               </button>
-              <button onClick={() => openAuthModal('signup')} className="btn btn-primary btn-sm">
+              <button onClick={() => openAuthModal('signup', () => navigate('/account'))} className="btn btn-primary btn-sm">
                 Get started
               </button>
             </>
@@ -94,19 +95,19 @@ export default function Navbar() {
               )}
               {isAuthenticated ? (
                 <>
-                  <Link to="/dashboard" className="navbar-link">My Trips</Link>
-                  <button onClick={logout} className="navbar-link">Sign out</button>
+                  <Link to="/account" className="navbar-link" onClick={() => setMobileOpen(false)}>My Trips</Link>
+                  <button onClick={() => { logout(); setMobileOpen(false); }} className="navbar-link">Sign out</button>
                 </>
               ) : (
                 <>
                   <button
-                    onClick={() => { openAuthModal('signin'); setMobileOpen(false); }}
+                    onClick={() => { openAuthModal('signin', () => navigate('/account')); setMobileOpen(false); }}
                     className="navbar-link"
                   >
                     Sign in
                   </button>
                   <button
-                    onClick={() => { openAuthModal('signup'); setMobileOpen(false); }}
+                    onClick={() => { openAuthModal('signup', () => navigate('/account')); setMobileOpen(false); }}
                     className="btn btn-primary btn-md btn-full"
                   >
                     Get started

@@ -14,8 +14,12 @@ class User(db.Model):
     id = db.Column(Uuid, primary_key=True, default=uuid.uuid4)
     email = db.Column(db.Text, unique=True, nullable=False, index=True)
     name = db.Column(db.Text, nullable=False)
-    password_hash = db.Column(db.Text, nullable=False)
+    password_hash = db.Column(db.Text, nullable=True)  # Nullable for OAuth users
     avatar_url = db.Column(db.Text, nullable=True)
+    
+    # OAuth fields
+    oauth_provider = db.Column(db.Text, nullable=True)  # google | apple | None
+    oauth_id = db.Column(db.Text, nullable=True, index=True)  # Provider's user ID
 
     created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
@@ -44,6 +48,8 @@ class User(db.Model):
         ).decode('utf-8')
 
     def check_password(self, password: str) -> bool:
+        if not self.password_hash:
+            return False  # OAuth users don't have password
         return bcrypt.checkpw(
             password.encode('utf-8'),
             self.password_hash.encode('utf-8'),
@@ -56,6 +62,7 @@ class User(db.Model):
             'email': self.email,
             'name': self.name,
             'avatar': self.avatar_url,
+            'oauthProvider': self.oauth_provider,
             'preferences': self.preferences.to_dict() if self.preferences else None,
             'notificationPreferences': (
                 self.notification_preferences.to_dict() if self.notification_preferences else None

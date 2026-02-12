@@ -95,6 +95,8 @@ export default function TripForm() {
     };
 
     if (!isAuthenticated) {
+      // Save form data to sessionStorage for OAuth flow
+      sessionStorage.setItem('pending_trip_generation', 'true');
       openAuthModal('signin', doGenerate);
     } else {
       await doGenerate();

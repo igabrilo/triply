@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { User } from '@/types';
+import { authAPI } from '@/services/api';
 
 interface AuthState {
   user: User | null;
@@ -15,6 +16,10 @@ interface AuthState {
   closeAuthModal: () => void;
   login: (email: string, password: string) => Promise<void>;
   signup: (name: string, email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
+  loginWithApple: () => Promise<void>;
+  handleOAuthCallback: (token: string) => Promise<void>;
+  fetchCurrentUser: () => Promise<void>;
   logout: () => void;
 }
 
@@ -43,35 +48,73 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   closeAuthModal: () =>
     set({ showAuthModal: false, pendingAction: null }),
 
-  login: async (email: string, _password: string) => {
-    // Mock login for now
-    const mockUser: User = {
-      id: '1',
-      email,
-      name: email.split('@')[0],
-      createdAt: new Date().toISOString(),
-    };
-    const mockToken = 'mock_token_' + Date.now();
-    set({ user: mockUser, isAuthenticated: true });
-    get().setToken(mockToken);
+  login: async (email: string, password: string) => {
+    const response = await authAPI.login(email, password);
+    if (!response.success) {
+      throw new Error(response.message || 'Login failed');
+    }
+    set({ user: response.user, isAuthenticated: true });
+    get().setToken(response.token);
     const pending = get().pendingAction;
     set({ showAuthModal: false, pendingAction: null });
     if (pending) pending();
   },
 
-  signup: async (name: string, email: string, _password: string) => {
-    const mockUser: User = {
-      id: '1',
-      email,
-      name,
-      createdAt: new Date().toISOString(),
-    };
-    const mockToken = 'mock_token_' + Date.now();
-    set({ user: mockUser, isAuthenticated: true });
-    get().setToken(mockToken);
+  signup: async (name: string, email: string, password: string) => {
+    const response = await authAPI.register(name, email, password);
+    if (!response.success) {
+      throw new Error(response.message || 'Registration failed');
+    }
+    set({ user: response.user, isAuthenticated: true });
+    get().setToken(response.token);
     const pending = get().pendingAction;
     set({ showAuthModal: false, pendingAction: null });
     if (pending) pending();
+  },
+
+  loginWithGoogle: async () => {
+    // Determine intent based on whether user is generating a trip
+    const isGeneratingTrip = sessionStorage.getItem('pending_trip_generation') === 'true';
+    const intent = isGeneratingTrip ? 'generate_trip' : 'account';
+    
+    const response = await authAPI.getGoogleAuthUrl(intent);
+    if (response.success && response.authUrl) {
+      window.location.href = response.authUrl;
+    } else {
+      throw new Error('Failed to initiate Google sign-in');
+    }
+  },
+
+  loginWithApple: async () => {
+    // Determine intent based on whether user is generating a trip
+    const isGeneratingTrip = sessionStorage.getItem('pending_trip_generation') === 'true';
+    const intent = isGeneratingTrip ? 'generate_trip' : 'account';
+    
+    const response = await authAPI.getAppleAuthUrl(intent);
+    if (response.success && response.authUrl) {
+      window.location.href = response.authUrl;
+    } else {
+      throw new Error('Failed to initiate Apple sign-in');
+    }
+  },
+
+  handleOAuthCallback: async (token: string) => {
+    get().setToken(token);
+    await get().fetchCurrentUser();
+    const pending = get().pendingAction;
+    set({ showAuthModal: false, pendingAction: null });
+    if (pending) pending();
+  },
+
+  fetchCurrentUser: async () => {
+    try {
+      const response = await authAPI.getCurrentUser();
+      if (response.success) {
+        set({ user: response.user, isAuthenticated: true });
+      }
+    } catch {
+      get().logout();
+    }
   },
 
   logout: () => {

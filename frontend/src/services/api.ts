@@ -33,3 +33,35 @@ apiClient.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// ------------------------------------------------------------------
+// Auth API
+// ------------------------------------------------------------------
+export const authAPI = {
+  async register(name: string, email: string, password: string) {
+    const { data } = await apiClient.post('/auth/register', { name, email, password });
+    return data;
+  },
+  
+  async login(email: string, password: string) {
+    const { data } = await apiClient.post('/auth/login', { email, password });
+    return data;
+  },
+  
+  async getCurrentUser() {
+    const { data } = await apiClient.get('/auth/me');
+    return data;
+  },
+  
+  async getGoogleAuthUrl(intent?: string) {
+    const params = intent ? { intent } : {};
+    const { data } = await apiClient.get('/auth/google', { params });
+    return data;
+  },
+  
+  async getAppleAuthUrl(intent?: string) {
+    const params = intent ? { intent } : {};
+    const { data } = await apiClient.get('/auth/apple', { params });
+    return data;
+  },
+};

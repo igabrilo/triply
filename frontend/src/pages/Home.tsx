@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Layout from '@components/layout/Layout';
 import HeroSection from '@components/home/HeroSection';
 import TripForm from '@components/home/TripForm';
@@ -8,9 +9,24 @@ import PricingSection from '@components/home/PricingSection';
 import Footer from '@components/home/Footer';
 import GeneratingOverlay from '@components/ui/GeneratingOverlay';
 import { useTripStore } from '@/store/tripStore';
+import { useAuthStore } from '@/store/authStore';
 
 export default function Home() {
-  const { isGenerating } = useTripStore();
+  const navigate = useNavigate();
+  const { isGenerating, generateTrip } = useTripStore();
+  const { isAuthenticated } = useAuthStore();
+
+  // Auto-trigger trip generation after OAuth callback (if user was generating a trip)
+  useEffect(() => {
+    const shouldGenerate = sessionStorage.getItem('pending_trip_generation');
+    if (shouldGenerate === 'true' && isAuthenticated) {
+      sessionStorage.removeItem('pending_trip_generation');
+      // Trigger trip generation
+      generateTrip().then(() => {
+        navigate('/dashboard');
+      });
+    }
+  }, [isAuthenticated, generateTrip, navigate]);
 
   // Scroll to section when landing with hash (e.g. from /#how-it-works)
   useEffect(() => {
