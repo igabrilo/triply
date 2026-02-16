@@ -11,12 +11,20 @@ class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     CORS_ORIGINS = os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(',')
-    
+
     # Session configuration (needed for OAuth state storage)
     SESSION_TYPE = 'filesystem'
     SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
+
+    # OpenAI
+    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+    OPENAI_MODEL_GENERATION = os.getenv('OPENAI_MODEL_GENERATION', 'gpt-5.2')
+    OPENAI_MODEL_CHAT = os.getenv('OPENAI_MODEL_CHAT', 'gpt-5-mini')
+
+    # Google Maps (optional – enables real geocoding for plan items)
+    GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY', '')
 
 
 class DevelopmentConfig(Config):

@@ -23,6 +23,10 @@ services:
       - FLASK_ENV=development
       - DATABASE_URL=postgresql://triply:triply_dev@db:5432/triply
       - SECRET_KEY=dev-secret-key-change-in-production
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL_GENERATION=${OPENAI_MODEL_GENERATION:-gpt-5.2}
+      - OPENAI_MODEL_CHAT=${OPENAI_MODEL_CHAT:-gpt-5-mini}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
     volumes:
       - ./backend:/app
     command: >

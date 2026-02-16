@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -12,43 +12,52 @@ import {
   ChevronRight,
   Mail,
   Crown,
+  Loader,
 } from 'lucide-react';
 import Layout from '@components/layout/Layout';
 import Button from '@components/ui/Button';
 import { useAuthStore } from '@/store/authStore';
-
-/* ─── Mock past trips (will be replaced with API call) ─── */
-const mockPastTrips = [
-  {
-    id: 'trip_1',
-    destination: 'Paris',
-    startDate: '2026-03-15',
-    endDate: '2026-03-20',
-    travelers: 2,
-    status: 'ready' as const,
-    daysCount: 5,
-  },
-  {
-    id: 'trip_2',
-    destination: 'Barcelona',
-    startDate: '2025-12-01',
-    endDate: '2025-12-06',
-    travelers: 4,
-    status: 'ready' as const,
-    daysCount: 5,
-  },
-];
+import { tripAPI } from '@/services/api';
+import { useTripStore } from '@/store/tripStore';
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function getDaysCount(startDate: string, endDate: string) {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000));
+}
+
 export default function Account() {
   const navigate = useNavigate();
   const { isAuthenticated, user, logout } = useAuthStore();
+  const { loadTrip } = useTripStore();
+  const [trips, setTrips] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isAuthenticated) navigate('/');
+    if (!isAuthenticated) {
+      navigate('/');
+      return;
+    }
+
+    // Load user's trips
+    const fetchTrips = async () => {
+      try {
+        const result = await tripAPI.getTrips();
+        if (result.success && result.trips) {
+          setTrips(result.trips);
+        }
+      } catch (err) {
+        console.error('Failed to load trips:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTrips();
   }, [isAuthenticated, navigate]);
 
   if (!isAuthenticated || !user) return null;
@@ -102,7 +111,7 @@ export default function Account() {
                 <Plane size={16} style={{ color: 'var(--primary-600)' }} />
               </div>
               <div>
-                <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-900)', lineHeight: 1 }}>{mockPastTrips.length}</p>
+                <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-900)', lineHeight: 1 }}>{trips.length}</p>
                 <p style={{ fontSize: 12, color: 'var(--navy-500)' }}>Trips planned</p>
               </div>
             </div>
@@ -131,61 +140,78 @@ export default function Account() {
             </Link>
           </div>
 
-          {mockPastTrips.length > 0 ? (
+          {loading ? (
+            <div className="card" style={{ padding: 48, textAlign: 'center' }}>
+              <Loader size={32} style={{ color: 'var(--primary-600)', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
+              <p style={{ fontSize: 14, color: 'var(--navy-500)' }}>Loading your trips...</p>
+            </div>
+          ) : trips.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {mockPastTrips.map((trip, idx) => (
-                <motion.div
-                  key={trip.id}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.25, delay: 0.12 + idx * 0.06 }}
-                  className="card card-interactive"
-                  style={{ padding: 20, cursor: 'pointer' }}
-                  onClick={() => navigate('/dashboard')}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                    {/* Destination icon */}
-                    <div style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: 14,
-                      background: 'linear-gradient(135deg, var(--primary-100), var(--primary-200))',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}>
-                      <MapPin size={22} style={{ color: 'var(--primary-600)' }} />
-                    </div>
-
-                    {/* Trip info */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                        <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--navy-900)', margin: 0 }}>
-                          {trip.destination}
-                        </h3>
-                        <span className={`badge ${trip.status === 'ready' ? 'badge-success' : 'badge-warning'}`}>
-                          {trip.status === 'ready' ? 'Complete' : 'Draft'}
-                        </span>
+              {trips.map((trip, idx) => {
+                const daysCount = trip.startDate && trip.endDate
+                  ? getDaysCount(trip.startDate, trip.endDate)
+                  : 0;
+                return (
+                  <motion.div
+                    key={trip.id}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25, delay: 0.12 + idx * 0.06 }}
+                    className="card card-interactive"
+                    style={{ padding: 20, cursor: 'pointer' }}
+                    onClick={async () => {
+                      await loadTrip(trip.id);
+                      navigate('/dashboard');
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                      {/* Destination icon */}
+                      <div style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 14,
+                        background: 'linear-gradient(135deg, var(--primary-100), var(--primary-200))',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}>
+                        <MapPin size={22} style={{ color: 'var(--primary-600)' }} />
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 13, color: 'var(--navy-500)' }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <Calendar size={12} />
-                          {formatDate(trip.startDate)} — {formatDate(trip.endDate)}
-                        </span>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <Users size={12} />
-                          {trip.travelers} traveler{trip.travelers !== 1 ? 's' : ''}
-                        </span>
-                        <span>{trip.daysCount} days</span>
-                      </div>
-                    </div>
 
-                    {/* Arrow */}
-                    <ChevronRight size={18} style={{ color: 'var(--navy-300)', flexShrink: 0 }} />
-                  </div>
-                </motion.div>
-              ))}
+                      {/* Trip info */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                          <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--navy-900)', margin: 0 }}>
+                            {trip.destination || trip.title || 'Untitled Trip'}
+                          </h3>
+                          <span className={`badge ${trip.status === 'ready' ? 'badge-success' : trip.status === 'generating' ? 'badge-warning' : 'badge-error'}`}>
+                            {trip.status === 'ready' ? 'Complete' : trip.status === 'generating' ? 'Generating...' : 'Draft'}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 13, color: 'var(--navy-500)' }}>
+                          {trip.startDate && trip.endDate && (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <Calendar size={12} />
+                              {formatDate(trip.startDate)} — {formatDate(trip.endDate)}
+                            </span>
+                          )}
+                          {trip.travelersCount && (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <Users size={12} />
+                              {trip.travelersCount} traveler{trip.travelersCount !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                          {daysCount > 0 && <span>{daysCount} days</span>}
+                        </div>
+                      </div>
+
+                      {/* Arrow */}
+                      <ChevronRight size={18} style={{ color: 'var(--navy-300)', flexShrink: 0 }} />
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
           ) : (
             <div className="card" style={{ padding: 48, textAlign: 'center' }}>
