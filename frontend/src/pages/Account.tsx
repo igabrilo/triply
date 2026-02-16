@@ -60,7 +60,16 @@ export default function Account() {
     fetchTrips();
   }, [isAuthenticated, navigate]);
 
-  if (!isAuthenticated || !user) return null;
+  // Redirect to home if not authenticated - show loading briefly to avoid flash
+  if (!isAuthenticated || !user) {
+    return (
+      <Layout showBlobs={false}>
+        <div className="page-container" style={{ paddingTop: 100, paddingBottom: 80, textAlign: 'center' }}>
+          <Loader size={32} style={{ color: 'var(--primary-600)', animation: 'spin 1s linear infinite', margin: '0 auto' }} />
+        </div>
+      </Layout>
+    );
+  }
 
   const handleLogout = () => {
     logout();

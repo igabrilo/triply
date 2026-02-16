@@ -1,9 +1,10 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, useScroll, useTransform } from 'framer-motion';
-import { MapPin, Calendar, Users, Sparkles } from 'lucide-react';
+import { MapPin, Calendar, Users, Sparkles, Navigation, Loader } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
 import { useAuthStore } from '@/store/authStore';
+import { geocodeAPI } from '@/services/api';
 import Input from '@components/ui/Input';
 import Button from '@components/ui/Button';
 import Chip from '@components/ui/Chip';
@@ -40,6 +41,8 @@ export default function TripForm() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showPreferences, setShowPreferences] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [detectingLocation, setDetectingLocation] = useState(false);
+  const [locationError, setLocationError] = useState('');
   
   const ref = useRef(null);
   const { scrollYProgress } = useScroll({
@@ -48,6 +51,67 @@ export default function TripForm() {
   });
 
   const y = useTransform(scrollYProgress, [0, 1], [50, -50]);
+
+  // Auto-detect location on mount (if not already set)
+  useEffect(() => {
+    if (formData.origin) return;
+    if (!navigator.geolocation) return;
+
+    setDetectingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const result = await geocodeAPI.reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+          if (result.success && result.city) {
+            updateFormData({ origin: result.city });
+          }
+        } catch (err) {
+          console.warn('Auto-detect location failed:', err);
+        } finally {
+          setDetectingLocation(false);
+        }
+      },
+      () => {
+        setDetectingLocation(false);
+      },
+      { timeout: 8000, maximumAge: 300000 }
+    );
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const detectLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported by your browser');
+      return;
+    }
+    setDetectingLocation(true);
+    setLocationError('');
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const result = await geocodeAPI.reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+          if (result.success && result.city) {
+            updateFormData({ origin: result.city });
+          } else {
+            setLocationError('Could not determine your city');
+          }
+        } catch {
+          setLocationError('Failed to detect location');
+        } finally {
+          setDetectingLocation(false);
+        }
+      },
+      (err) => {
+        setDetectingLocation(false);
+        if (err.code === err.PERMISSION_DENIED) {
+          setLocationError('Location access denied. Please enter manually.');
+        } else {
+          setLocationError('Could not get your location');
+        }
+      },
+      { timeout: 10000, maximumAge: 60000 }
+    );
+  };
 
   const validate = () => {
     const errs: Record<string, string> = {};
@@ -140,6 +204,48 @@ export default function TripForm() {
               ))}
             </div>
           )}
+        </div>
+
+        {/* Origin / Flying from */}
+        <div>
+          <label className="form-label">Flying from</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <Input
+                placeholder={detectingLocation ? 'Detecting your city...' : 'e.g., London'}
+                value={formData.origin}
+                onChange={(e) => updateFormData({ origin: e.target.value })}
+                icon={detectingLocation
+                  ? <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                  : <Navigation size={16} />
+                }
+              />
+            </div>
+            <button
+              type="button"
+              onClick={detectLocation}
+              disabled={detectingLocation}
+              className="btn btn-ghost btn-sm"
+              style={{
+                height: 42,
+                padding: '0 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 13,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+              title="Detect my location"
+            >
+              <Navigation size={14} />
+              Detect
+            </button>
+          </div>
+          {locationError && <p className="form-error">{locationError}</p>}
+          <p style={{ fontSize: 12, color: 'var(--navy-400)', marginTop: 4 }}>
+            Helps us suggest flights from your city
+          </p>
         </div>
 
         {/* Dates */}

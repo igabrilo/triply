@@ -38,6 +38,7 @@ const defaultFormData: TripFormData = {
   endDate: '',
   travelers: 2,
   budget: 'mid' as BudgetLevel,
+  origin: '',
   preferences: {
     interests: [],
     pace: 'balanced',
@@ -265,6 +266,7 @@ export const useTripStore = create<TripState>((set, get) => ({
           endDate: t.endDate || '',
           travelers: t.travelersCount || 2,
           budget: (t.budgetTier || 'mid') as BudgetLevel,
+          origin: t.origin || '',
           preferences: {
             interests: t.interests ? t.interests.split(',') : [],
             pace: (t.pace || 'balanced') as 'relaxed' | 'balanced' | 'packed',

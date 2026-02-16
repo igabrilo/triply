@@ -76,6 +76,58 @@ def geocode_place(query: str) -> dict:
     return result
 
 
+def reverse_geocode_city(lat: float, lng: float) -> Optional[str]:
+    """Resolve lat/lng into a city name using Google Geocoding API.
+
+    Returns the city name (e.g. "Zagreb, Croatia") or None if unavailable.
+    Falls back to a free IP-based lookup when no Google API key is present.
+    """
+    api_key = current_app.config.get('GOOGLE_MAPS_API_KEY', '')
+
+    if api_key:
+        try:
+            resp = requests.get(
+                'https://maps.googleapis.com/maps/api/geocode/json',
+                params={'latlng': f'{lat},{lng}', 'key': api_key, 'result_type': 'locality'},
+                timeout=5,
+            )
+            data = resp.json()
+            if data.get('status') == 'OK' and data.get('results'):
+                components = data['results'][0].get('address_components', [])
+                city = None
+                country = None
+                for comp in components:
+                    types = comp.get('types', [])
+                    if 'locality' in types:
+                        city = comp.get('long_name')
+                    elif 'country' in types:
+                        country = comp.get('long_name')
+                if city:
+                    return f"{city}, {country}" if country else city
+                return data['results'][0].get('formatted_address')
+        except Exception as exc:
+            logger.warning("Reverse geocode failed for (%s, %s): %s", lat, lng, exc)
+
+    # Fallback: use free Nominatim (OpenStreetMap) reverse geocoding
+    try:
+        resp = requests.get(
+            'https://nominatim.openstreetmap.org/reverse',
+            params={'lat': lat, 'lon': lng, 'format': 'json', 'zoom': 10},
+            headers={'User-Agent': 'Triply/1.0'},
+            timeout=5,
+        )
+        data = resp.json()
+        address = data.get('address', {})
+        city = address.get('city') or address.get('town') or address.get('village') or address.get('municipality')
+        country = address.get('country')
+        if city:
+            return f"{city}, {country}" if country else city
+    except Exception as exc:
+        logger.warning("Nominatim reverse geocode failed for (%s, %s): %s", lat, lng, exc)
+
+    return None
+
+
 def enrich_plan_items(days_data: list[dict]) -> list[dict]:
     """Enrich plan items with geocoded lat/lng and maps_url.
 

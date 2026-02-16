@@ -33,48 +33,102 @@ export default function FlightsSection() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.1 }}
             className="item-card"
+            style={{ padding: '16px 20px' }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1, minWidth: 0 }}>
-                <div className="flight-icon-box"><Plane size={18} /></div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="flight-route">
-                    {flight.departure} <ArrowRight size={14} style={{ color: 'var(--navy-400)' }} /> {flight.arrival}
-                  </div>
-                  <p className="flight-airline">{flight.airline}</p>
+            {/* Header: Airline + Actions */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div 
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 12,
+                    background: 'linear-gradient(135deg, var(--primary-50), var(--primary-100))',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Plane size={18} style={{ color: 'var(--primary-600)' }} />
                 </div>
-                <div className="hide-mobile" style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-                  <div style={{ textAlign: 'center' }}>
-                    <p className="flight-time">{flight.departureTime}</p>
-                    <p className="flight-code">{flight.departure}</p>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <p className="flight-code">{flight.duration}</p>
-                    <div className="flight-duration-line" />
-                    <p className="flight-code">{flight.stops === 0 ? 'Direct' : `${flight.stops} stop${flight.stops > 1 ? 's' : ''}`}</p>
-                  </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <p className="flight-time">{flight.arrivalTime}</p>
-                    <p className="flight-code">{flight.arrival}</p>
-                  </div>
+                <div>
+                  <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--navy-900)', lineHeight: 1.3 }}>
+                    {flight.airline || 'Flight'}
+                  </p>
+                  <p style={{ fontSize: 13, color: 'var(--navy-500)', marginTop: 2 }}>
+                    {flight.stops === 0 ? 'Direct flight' : `${flight.stops} stop${flight.stops > 1 ? 's' : ''}`}
+                  </p>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ textAlign: 'right' }}>
-                  <p className="flight-price">{flight.priceRange}</p>
-                  <p className="flight-price-sub">per person</p>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <button
                   onClick={() => toggleFlightSaved(flight.id)}
                   className={`icon-btn ${flight.saved ? 'icon-btn-star-active' : 'icon-btn-star'}`}
+                  title="Save flight"
                 >
-                  <Star size={16} fill={flight.saved ? 'currentColor' : 'none'} />
+                  <Star size={14} fill={flight.saved ? 'currentColor' : 'none'} />
                 </button>
-                <a href={flight.bookingUrl} target="_blank" rel="noopener noreferrer" className="view-btn">
-                  View <ExternalLink size={12} />
-                </a>
               </div>
+            </div>
+
+            {/* Route Details */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+              {/* Departure */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 12, color: 'var(--navy-500)', marginBottom: 4 }}>From</p>
+                <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--navy-900)' }}>{flight.departure}</p>
+                {flight.departureTime && (
+                  <p style={{ fontSize: 13, color: 'var(--navy-600)', marginTop: 2 }}>{flight.departureTime}</p>
+                )}
+              </div>
+
+              {/* Arrow + Duration */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0 8px', flexShrink: 0 }}>
+                <ArrowRight size={18} style={{ color: 'var(--navy-400)' }} />
+                {flight.duration && (
+                  <p style={{ fontSize: 11, color: 'var(--navy-400)', marginTop: 4, whiteSpace: 'nowrap' }}>
+                    {flight.duration}
+                  </p>
+                )}
+              </div>
+
+              {/* Arrival */}
+              <div style={{ flex: 1, minWidth: 0, textAlign: 'right' }}>
+                <p style={{ fontSize: 12, color: 'var(--navy-500)', marginBottom: 4 }}>To</p>
+                <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--navy-900)' }}>{flight.arrival}</p>
+                {flight.arrivalTime && (
+                  <p style={{ fontSize: 13, color: 'var(--navy-600)', marginTop: 2 }}>{flight.arrivalTime}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Footer: Price + View Button */}
+            <div 
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between',
+                paddingTop: 12,
+                borderTop: '1px solid var(--navy-50)',
+              }}
+            >
+              <div>
+                <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--primary-600)' }}>
+                  {flight.priceRange}
+                </p>
+                <p style={{ fontSize: 12, color: 'var(--navy-500)' }}>per person</p>
+              </div>
+              <a 
+                href={flight.bookingUrl} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="btn btn-primary btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                View <ExternalLink size={12} />
+              </a>
             </div>
           </motion.div>
         ))}

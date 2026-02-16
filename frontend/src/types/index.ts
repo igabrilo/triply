@@ -5,6 +5,7 @@ export interface TripFormData {
   endDate: string;
   travelers: number;
   budget: BudgetLevel;
+  origin: string;
   preferences: TripPreferences;
 }
 

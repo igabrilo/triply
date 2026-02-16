@@ -36,6 +36,16 @@ apiClient.interceptors.response.use(
 );
 
 // ------------------------------------------------------------------
+// Geocoding API
+// ------------------------------------------------------------------
+export const geocodeAPI = {
+  async reverseGeocode(lat: number, lng: number) {
+    const { data } = await apiClient.get('/geocode/reverse', { params: { lat, lng } });
+    return data;
+  },
+};
+
+// ------------------------------------------------------------------
 // Auth API
 // ------------------------------------------------------------------
 export const authAPI = {
