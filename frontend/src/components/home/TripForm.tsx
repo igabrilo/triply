@@ -91,7 +91,7 @@ export default function TripForm() {
       setIsSubmitting(true);
       await generateTrip();
       setIsSubmitting(false);
-      navigate('/dashboard');
+      navigate('/dashboard');  // navigates immediately – generation continues via SSE
     };
 
     if (!isAuthenticated) {

@@ -140,7 +140,9 @@ export const useTripStore = create<TripState>((set, get) => ({
   currentTrip: null,
 
   // -----------------------------------------------------------------
-  // Generate trip: POST to create, then SSE for progressive results
+  // Generate trip: POST to create, then SSE for progressive results.
+  // Resolves as soon as the trip record exists and the SSE stream is
+  // open so the caller can navigate to the dashboard immediately.
   // -----------------------------------------------------------------
   generateTrip: async () => {
     const { formData } = get();
@@ -154,7 +156,7 @@ export const useTripStore = create<TripState>((set, get) => ({
 
       const tripId = result.trip.id;
 
-      // Initialize a skeleton trip
+      // Initialize a skeleton trip so the dashboard can render immediately
       const trip: Trip = {
         id: tripId,
         userId: result.trip.userId,
@@ -169,7 +171,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       };
       set({ currentTrip: trip });
 
-      // Open SSE stream
+      // Open SSE stream (fire-and-forget – updates arrive asynchronously)
       const eventSource = tripAPI.streamGeneration(tripId);
 
       eventSource.addEventListener('status', (e: MessageEvent) => {
@@ -207,8 +209,6 @@ export const useTripStore = create<TripState>((set, get) => ({
         set((s) => ({
           isGenerating: false,
           generationStatus: '',
-          activeTab: 'plan',
-          selectedDay: null,
           currentTrip: s.currentTrip ? { ...s.currentTrip, status: 'ready' } : null,
         }));
       });
@@ -223,7 +223,6 @@ export const useTripStore = create<TripState>((set, get) => ({
             currentTrip: s.currentTrip ? { ...s.currentTrip, status: 'error' } : null,
           }));
         } catch {
-          // EventSource native error (connection lost etc.)
           console.error('SSE connection error');
         }
         eventSource.close();
@@ -237,6 +236,8 @@ export const useTripStore = create<TripState>((set, get) => ({
           currentTrip: s.currentTrip ? { ...s.currentTrip, status: 'error' } : null,
         }));
       };
+
+      // Resolve immediately – SSE events will continue updating state
     } catch (err: any) {
       console.error('Trip creation failed:', err);
       set({

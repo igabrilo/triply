@@ -13,13 +13,14 @@ const tabs: { id: TabId; label: string }[] = [
 ];
 
 export default function DashboardHeader() {
-  const { currentTrip, activeTab, setActiveTab } = useTripStore();
+  const { currentTrip, activeTab, setActiveTab, isGenerating } = useTripStore();
   const { user } = useAuthStore();
 
   if (!currentTrip) return null;
 
   const dest = currentTrip.formData.destinations[0] || 'Trip';
   const days = currentTrip.plan.length;
+  const isReady = currentTrip.status === 'ready' && !isGenerating;
 
   return (
     <div style={{ marginBottom: 24 }}>
@@ -31,8 +32,12 @@ export default function DashboardHeader() {
       >
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--navy-950)', display: 'flex', alignItems: 'center', gap: 12 }}>
-            {dest} — {days} days
-            <span className="badge badge-success">Saved</span>
+            {dest}{days > 0 ? ` — ${days} days` : ''}
+            {isReady ? (
+              <span className="badge badge-success">Saved</span>
+            ) : (
+              <span className="badge badge-warning">Generating...</span>
+            )}
           </h1>
           <p style={{ fontSize: 14, color: 'var(--navy-500)', marginTop: 2 }}>
             {dest} · {currentTrip.formData.startDate} → {currentTrip.formData.endDate} · {currentTrip.formData.travelers} traveler{currentTrip.formData.travelers > 1 ? 's' : ''}
