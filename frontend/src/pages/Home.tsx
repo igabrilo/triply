@@ -7,13 +7,12 @@ import FeaturesSection from '@components/home/FeaturesSection';
 import HowItWorks from '@components/home/HowItWorks';
 import PricingSection from '@components/home/PricingSection';
 import Footer from '@components/home/Footer';
-import GeneratingOverlay from '@components/ui/GeneratingOverlay';
 import { useTripStore } from '@/store/tripStore';
 import { useAuthStore } from '@/store/authStore';
 
 export default function Home() {
   const navigate = useNavigate();
-  const { isGenerating, generateTrip } = useTripStore();
+  const { generateTrip } = useTripStore();
   const { isAuthenticated } = useAuthStore();
 
   // Auto-trigger trip generation after OAuth callback (if user was generating a trip)
@@ -23,7 +22,7 @@ export default function Home() {
       sessionStorage.removeItem('pending_trip_generation');
       // Trigger trip generation
       generateTrip().then(() => {
-        navigate('/dashboard');
+        navigate('/dashboard');  // navigates immediately – generation continues via SSE
       });
     }
   }, [isAuthenticated, generateTrip, navigate]);
@@ -49,8 +48,6 @@ export default function Home() {
         <Footer />
       </div>
 
-      {/* Generating Overlay */}
-      {isGenerating && <GeneratingOverlay />}
     </Layout>
   );
 }

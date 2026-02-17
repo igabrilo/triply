@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { TripFormData, Trip, TabId, BudgetLevel, Flight, Stay, PlanDay } from '@/types';
+import { tripAPI } from '@/services/api';
+import type { TripFormData, Trip, TabId, BudgetLevel, PlanDay, Flight, Stay } from '@/types';
 
 interface TripState {
   /* ─── Form ─── */
@@ -12,6 +13,7 @@ interface TripState {
   generationStatus: string;
   currentTrip: Trip | null;
   generateTrip: () => Promise<void>;
+  loadTrip: (tripId: string) => Promise<void>;
 
   /* ─── Dashboard ─── */
   activeTab: TabId;
@@ -24,9 +26,10 @@ interface TripState {
   toggleStaySaved: (stayId: string) => void;
   updateActivityStatus: (activityId: string, status: 'planned' | 'saved' | 'must-do' | 'skip') => void;
 
-  /* ─── Section update indicator ─── */
+  /* ─── Section update from chat edits ─── */
   updatedSections: Record<string, number>;
   markSectionUpdated: (section: string) => void;
+  applySectionData: (section: string, data: unknown[]) => void;
 }
 
 const defaultFormData: TripFormData = {
@@ -35,6 +38,7 @@ const defaultFormData: TripFormData = {
   endDate: '',
   travelers: 2,
   budget: 'mid' as BudgetLevel,
+  origin: '',
   preferences: {
     interests: [],
     pace: 'balanced',
@@ -46,256 +50,83 @@ const defaultFormData: TripFormData = {
   },
 };
 
-/* ─── Mock Data ─── */
-const mockFlights: Flight[] = [
-  {
-    id: 'f1',
-    airline: 'Air France',
-    departure: 'ZAG',
-    arrival: 'CDG',
-    departureTime: '08:30',
-    arrivalTime: '10:45',
-    duration: '2h 15m',
-    stops: 0,
-    priceRange: '\u20AC120\u2013\u20AC180',
-    bookingUrl: 'https://www.airfrance.com',
-    saved: false,
-  },
-  {
-    id: 'f2',
-    airline: 'Lufthansa',
-    departure: 'ZAG',
-    arrival: 'CDG',
-    departureTime: '14:10',
-    arrivalTime: '17:30',
-    duration: '3h 20m',
-    stops: 1,
-    priceRange: '\u20AC95\u2013\u20AC140',
-    bookingUrl: 'https://www.lufthansa.com',
-    saved: false,
-  },
-  {
-    id: 'f3',
-    airline: 'Croatia Airlines',
-    departure: 'ZAG',
-    arrival: 'CDG',
-    departureTime: '06:15',
-    arrivalTime: '08:25',
-    duration: '2h 10m',
-    stops: 0,
-    priceRange: '\u20AC140\u2013\u20AC200',
-    bookingUrl: 'https://www.croatiaairlines.com',
-    saved: false,
-  },
-];
-
-const mockStays: Stay[] = [
-  {
-    id: 's1',
-    name: 'H\u00F4tel du Petit Moulin',
-    type: 'Boutique Hotel',
-    neighborhood: 'Le Marais',
-    priceRange: '\u20AC150\u2013\u20AC200/night',
-    rating: 4.6,
-    reviewCount: 824,
-    whyItFits: 'Central location in Le Marais, walkable to major attractions. Great for couples.',
-    bookingUrl: 'https://www.booking.com',
-    amenities: ['Wi-Fi', 'Breakfast', 'Air Conditioning'],
-    saved: false,
-  },
-  {
-    id: 's2',
-    name: 'Citadines Montmartre',
-    type: 'Apart-Hotel',
-    neighborhood: 'Montmartre',
-    priceRange: '\u20AC120\u2013\u20AC170/night',
-    rating: 4.3,
-    reviewCount: 1205,
-    whyItFits: 'Self-catering option with kitchen. Perfect if you want a local feel near Sacr\u00E9-C\u0153ur.',
-    bookingUrl: 'https://www.booking.com',
-    amenities: ['Kitchen', 'Wi-Fi', 'Laundry'],
-    saved: false,
-  },
-  {
-    id: 's3',
-    name: 'Generator Paris',
-    type: 'Hostel',
-    neighborhood: 'Canal Saint-Martin',
-    priceRange: '\u20AC40\u2013\u20AC80/night',
-    rating: 4.1,
-    reviewCount: 3420,
-    whyItFits: 'Budget-friendly with a social vibe. Near trendy caf\u00E9s and the canal.',
-    bookingUrl: 'https://www.booking.com',
-    amenities: ['Wi-Fi', 'Bar', 'Lounge'],
-    saved: false,
-  },
-];
-
-const mockPlan: PlanDay[] = [
-  {
-    day: 1,
-    title: 'Arrival + Montmartre',
-    activities: [
-      {
-        id: 'a1',
-        name: 'Sacr\u00E9-C\u0153ur Basilica',
-        description: 'Start with panoramic views and a calm walk around the hill.',
-        timeOfDay: 'Morning',
-        duration: '60\u201390 min',
-        links: [
-          { label: 'Map', url: 'https://maps.google.com/?q=Sacre+Coeur+Paris', type: 'map' },
-          { label: 'Official', url: 'https://www.sacre-coeur-montmartre.com', type: 'official' },
-        ],
-        status: 'planned',
-        tags: ['landmark', 'views'],
-      },
-      {
-        id: 'a2',
-        name: 'Caf\u00E9 stop in Montmartre',
-        description: 'Pick a quiet caf\u00E9 street and settle in for a slow start.',
-        timeOfDay: 'Late morning',
-        duration: '45\u201360 min',
-        links: [
-          { label: 'Map', url: 'https://maps.google.com/?q=Montmartre+cafes+Paris', type: 'map' },
-        ],
-        status: 'planned',
-        tags: ['food', 'relax'],
-      },
-    ],
-  },
-  {
-    day: 2,
-    title: 'Louvre + Seine',
-    activities: [
-      {
-        id: 'a3',
-        name: 'Louvre Museum',
-        description: 'Go early and focus on 3\u20134 highlights to avoid fatigue.',
-        timeOfDay: 'Morning',
-        duration: '2\u20133 hours',
-        links: [
-          { label: 'Map', url: 'https://maps.google.com/?q=Louvre+Museum+Paris', type: 'map' },
-          { label: 'Tickets', url: 'https://www.louvre.fr/en/visit', type: 'tickets' },
-        ],
-        status: 'planned',
-        tags: ['museum', 'culture'],
-      },
-      {
-        id: 'a4',
-        name: 'Seine River Walk',
-        description: 'Stroll along the Left Bank, browse the bookstalls, and enjoy the views.',
-        timeOfDay: 'Afternoon',
-        duration: '1\u20132 hours',
-        links: [
-          { label: 'Map', url: 'https://maps.google.com/?q=Seine+River+Walk+Paris', type: 'map' },
-        ],
-        status: 'planned',
-        tags: ['walk', 'scenic'],
-      },
-    ],
-  },
-  {
-    day: 3,
-    title: 'Eiffel Tower + Latin Quarter',
-    activities: [
-      {
-        id: 'a5',
-        name: 'Eiffel Tower',
-        description: 'Book tickets in advance. Go for sunset views if possible.',
-        timeOfDay: 'Late afternoon',
-        duration: '2\u20133 hours',
-        links: [
-          { label: 'Map', url: 'https://maps.google.com/?q=Eiffel+Tower+Paris', type: 'map' },
-          { label: 'Tickets', url: 'https://www.toureiffel.paris/en', type: 'tickets' },
-        ],
-        status: 'planned',
-        tags: ['landmark', 'iconic'],
-      },
-      {
-        id: 'a6',
-        name: 'Dinner in the Latin Quarter',
-        description: 'Explore Rue Mouffetard for authentic French bistros.',
-        timeOfDay: 'Evening',
-        duration: '1.5\u20132 hours',
-        links: [
-          { label: 'Map', url: 'https://maps.google.com/?q=Rue+Mouffetard+Paris', type: 'map' },
-        ],
-        status: 'planned',
-        tags: ['food', 'nightlife'],
-      },
-    ],
-  },
-  {
-    day: 4,
-    title: 'Versailles Day Trip',
-    activities: [
-      {
-        id: 'a7',
-        name: 'Palace of Versailles',
-        description: 'Take the RER C early. Explore the palace, gardens, and Trianon.',
-        timeOfDay: 'Full day',
-        duration: '5\u20136 hours',
-        links: [
-          { label: 'Map', url: 'https://maps.google.com/?q=Palace+of+Versailles', type: 'map' },
-          { label: 'Tickets', url: 'https://en.chateauversailles.fr', type: 'tickets' },
-        ],
-        status: 'planned',
-        tags: ['day-trip', 'palace', 'gardens'],
-      },
-    ],
-  },
-  {
-    day: 5,
-    title: 'Le Marais + Departure',
-    activities: [
-      {
-        id: 'a8',
-        name: 'Morning in Le Marais',
-        description: 'Browse vintage shops, galleries, and grab falafel on Rue des Rosiers.',
-        timeOfDay: 'Morning',
-        duration: '2\u20133 hours',
-        links: [
-          { label: 'Map', url: 'https://maps.google.com/?q=Le+Marais+Paris', type: 'map' },
-        ],
-        status: 'planned',
-        tags: ['shopping', 'food', 'culture'],
-      },
-      {
-        id: 'a9',
-        name: 'Transfer to Airport',
-        description: 'Head to CDG via RER B or book a taxi. Allow 2\u20133 hours.',
-        timeOfDay: 'Afternoon',
-        duration: '2\u20133 hours',
-        links: [
-          { label: 'Map', url: 'https://maps.google.com/?q=CDG+Airport+Paris', type: 'map' },
-        ],
-        status: 'planned',
-        tags: ['logistics'],
-      },
-    ],
-  },
-];
-
-/* ─── Initial Mock Trip for Preview ─── */
-const initialMockTrip: Trip = {
-  id: 'trip_mock_preview',
-  userId: '1',
-  formData: {
-    ...defaultFormData,
-    destinations: ['Paris'],
-    startDate: '2026-03-15',
-    endDate: '2026-03-20',
-    travelers: 2,
-    budget: 'mid' as BudgetLevel,
-  },
-  flights: mockFlights,
-  stays: mockStays,
-  plan: mockPlan,
-  savedItems: [],
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-  status: 'ready',
+// ------------------------------------------------------------------
+// Status labels for each generation phase
+// ------------------------------------------------------------------
+const phaseLabels: Record<string, string> = {
+  generating_plan: 'Building your itinerary...',
+  generating_stays: 'Finding accommodation...',
+  generating_flights: 'Searching flights...',
 };
+
+// ------------------------------------------------------------------
+// Transform backend data → frontend types
+// ------------------------------------------------------------------
+function transformDays(backendDays: any[]): PlanDay[] {
+  return backendDays.map((d: any) => ({
+    day: d.dayIndex ?? d.day_index ?? 0,
+    title: d.title || `Day ${(d.dayIndex ?? d.day_index ?? 0) + 1}`,
+    activities: (d.items || d.planItems || []).map((item: any, idx: number) => ({
+      id: item.id || `item_${idx}`,
+      name: item.title || item.name || '',
+      description: item.description || '',
+      timeOfDay: item.timeBlock || item.time_block || '',
+      duration: item.durationMinutes ? `${item.durationMinutes} min` : '',
+      links: [
+        ...(item.mapsUrl || item.maps_url
+          ? [{ label: 'Map', url: item.mapsUrl || item.maps_url, type: 'map' as const }]
+          : []),
+        ...(item.externalUrl || item.external_url
+          ? [{ label: 'Link', url: item.externalUrl || item.external_url, type: 'other' as const }]
+          : []),
+      ],
+      status: item.status || 'planned',
+      tags: [item.category || item.timeBlock || item.time_block].filter(Boolean) as string[],
+    })),
+  }));
+}
+
+function transformFlights(backendFlights: any[]): Flight[] {
+  return backendFlights.map((f: any, idx: number) => {
+    const details = f.details || {};
+    return {
+      id: f.id || `flight_${idx}`,
+      airline: f.airline || details.airline || 'Unknown',
+      departure: details.origin || f.origin || '',
+      arrival: details.destination || f.destination || '',
+      departureTime: details.departTimeHint || (f.departTime ? new Date(f.departTime).toLocaleTimeString() : ''),
+      arrivalTime: details.arriveTimeHint || (f.arriveTime ? new Date(f.arriveTime).toLocaleTimeString() : ''),
+      duration: details.durationHint || (f.durationMinutes ? `${f.durationMinutes} min` : ''),
+      stops: f.stopsCount ?? f.stops_count ?? 0,
+      priceRange: details.priceHint || (f.price ? `€${f.price}` : ''),
+      bookingUrl: f.deepLinkUrl || f.deep_link_url || details.bookingSearchUrl || '#',
+      saved: f.saved || false,
+    };
+  });
+}
+
+function transformStays(backendStays: any[]): Stay[] {
+  return backendStays.map((s: any, idx: number) => {
+    const details = s.details || {};
+    return {
+      id: s.id || `stay_${idx}`,
+      name: s.name || 'Unknown',
+      type: details.stayType || s.stay_type || 'Hotel',
+      neighborhood: s.neighborhood || '',
+      priceRange: details.priceRange || s.price_range || (s.price ? `€${s.price}/night` : ''),
+      rating: s.rating ?? s.rating_hint ?? 0,
+      reviewCount: 0,
+      whyItFits: s.whyItFits || s.why_it_fits || '',
+      bookingUrl: s.deepLinkUrl || s.deep_link_url || details.bookingSearchUrl || '#',
+      amenities: details.amenities || s.amenities || [],
+      saved: s.saved || false,
+    };
+  });
+}
+
+// ------------------------------------------------------------------
+// Store
+// ------------------------------------------------------------------
 
 export const useTripStore = create<TripState>((set, get) => ({
   formData: { ...defaultFormData },
@@ -307,45 +138,157 @@ export const useTripStore = create<TripState>((set, get) => ({
 
   isGenerating: false,
   generationStatus: '',
-  currentTrip: initialMockTrip, // Set initial mock trip for preview
+  currentTrip: null,
 
+  // -----------------------------------------------------------------
+  // Generate trip: POST to create, then SSE for progressive results.
+  // Resolves as soon as the trip record exists and the SSE stream is
+  // open so the caller can navigate to the dashboard immediately.
+  // -----------------------------------------------------------------
   generateTrip: async () => {
-    set({ isGenerating: true, generationStatus: 'Analyzing your preferences...' });
-    await new Promise((r) => setTimeout(r, 1200));
-    set({ generationStatus: 'Finding best flights...' });
-    await new Promise((r) => setTimeout(r, 1000));
-    set({ generationStatus: 'Matching accommodation...' });
-    await new Promise((r) => setTimeout(r, 1000));
-    set({ generationStatus: 'Building your itinerary...' });
-    await new Promise((r) => setTimeout(r, 1200));
-
     const { formData } = get();
-    const days = formData.startDate && formData.endDate
-      ? Math.max(1, Math.ceil((new Date(formData.endDate).getTime() - new Date(formData.startDate).getTime()) / 86400000))
-      : 5;
+    set({ isGenerating: true, generationStatus: 'Creating your trip...' });
 
-    const trip: Trip = {
-      id: 'trip_' + Date.now(),
-      userId: '1',
-      formData,
-      flights: mockFlights,
-      stays: mockStays,
-      plan: mockPlan.slice(0, days),
-      savedItems: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      status: 'ready',
-    };
+    try {
+      const result = await tripAPI.createTrip(formData);
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to create trip');
+      }
 
-    set({
-      currentTrip: trip,
-      isGenerating: false,
-      generationStatus: '',
-      activeTab: 'plan',
-      selectedDay: null,
-    });
+      const tripId = result.trip.id;
 
-    return;
+      // Initialize a skeleton trip so the dashboard can render immediately
+      const trip: Trip = {
+        id: tripId,
+        userId: result.trip.userId,
+        formData,
+        flights: [],
+        stays: [],
+        plan: [],
+        savedItems: [],
+        createdAt: result.trip.createdAt || new Date().toISOString(),
+        updatedAt: result.trip.updatedAt || new Date().toISOString(),
+        status: 'generating',
+      };
+      set({ currentTrip: trip });
+
+      // Open SSE stream (fire-and-forget – updates arrive asynchronously)
+      const eventSource = tripAPI.streamGeneration(tripId);
+
+      eventSource.addEventListener('status', (e: MessageEvent) => {
+        const data = JSON.parse(e.data);
+        const label = phaseLabels[data.phase] || data.phase;
+        set({ generationStatus: label });
+      });
+
+      eventSource.addEventListener('section_ready', (e: MessageEvent) => {
+        const data = JSON.parse(e.data);
+        const section = data.section;
+        const sectionData = data.data;
+
+        set((s) => {
+          if (!s.currentTrip) return {};
+          const updates: Partial<Trip> = {};
+
+          if (section === 'plan') {
+            updates.plan = transformDays(sectionData);
+          } else if (section === 'stays') {
+            updates.stays = transformStays(sectionData);
+          } else if (section === 'flights') {
+            updates.flights = transformFlights(sectionData);
+          }
+
+          return {
+            currentTrip: { ...s.currentTrip, ...updates },
+            updatedSections: { ...s.updatedSections, [section]: Date.now() },
+          };
+        });
+      });
+
+      eventSource.addEventListener('done', (_e: MessageEvent) => {
+        eventSource.close();
+        set((s) => ({
+          isGenerating: false,
+          generationStatus: '',
+          currentTrip: s.currentTrip ? { ...s.currentTrip, status: 'ready' } : null,
+        }));
+      });
+
+      eventSource.addEventListener('error', (e: MessageEvent) => {
+        try {
+          const data = JSON.parse((e as any).data || '{}');
+          console.error('Generation error:', data.message);
+          set((s) => ({
+            isGenerating: false,
+            generationStatus: '',
+            currentTrip: s.currentTrip ? { ...s.currentTrip, status: 'error' } : null,
+          }));
+        } catch {
+          console.error('SSE connection error');
+        }
+        eventSource.close();
+      });
+
+      eventSource.onerror = () => {
+        eventSource.close();
+        set((s) => ({
+          isGenerating: false,
+          generationStatus: '',
+          currentTrip: s.currentTrip ? { ...s.currentTrip, status: 'error' } : null,
+        }));
+      };
+
+      // Resolve immediately – SSE events will continue updating state
+    } catch (err: any) {
+      console.error('Trip creation failed:', err);
+      set({
+        isGenerating: false,
+        generationStatus: '',
+      });
+    }
+  },
+
+  // -----------------------------------------------------------------
+  // Load an existing trip from the backend
+  // -----------------------------------------------------------------
+  loadTrip: async (tripId: string) => {
+    try {
+      const result = await tripAPI.getTrip(tripId);
+      if (!result.success || !result.trip) return;
+
+      const t = result.trip;
+      const trip: Trip = {
+        id: t.id,
+        userId: t.userId,
+        formData: {
+          destinations: t.destination ? [t.destination] : [],
+          startDate: t.startDate || '',
+          endDate: t.endDate || '',
+          travelers: t.travelersCount || 2,
+          budget: (t.budgetTier || 'mid') as BudgetLevel,
+          origin: t.origin || '',
+          preferences: {
+            interests: t.interests ? t.interests.split(',') : [],
+            pace: (t.pace || 'balanced') as 'relaxed' | 'balanced' | 'packed',
+            stayStyle: [],
+            dealBreakers: [],
+            accessibility: [],
+            dietary: [],
+            kidsFriendly: false,
+          },
+        },
+        flights: transformFlights(t.flights || []),
+        stays: transformStays(t.stays || []),
+        plan: transformDays(t.days || []),
+        savedItems: [],
+        createdAt: t.createdAt,
+        updatedAt: t.updatedAt,
+        status: t.status,
+      };
+      set({ currentTrip: trip });
+    } catch (err) {
+      console.error('Failed to load trip:', err);
+    }
   },
 
   activeTab: 'plan',
@@ -388,4 +331,27 @@ export const useTripStore = create<TripState>((set, get) => ({
     set((s) => ({
       updatedSections: { ...s.updatedSections, [section]: Date.now() },
     })),
+
+  // -----------------------------------------------------------------
+  // Apply section data from a chat edit response
+  // -----------------------------------------------------------------
+  applySectionData: (section: string, data: unknown[]) => {
+    set((s) => {
+      if (!s.currentTrip) return {};
+      const updates: Partial<Trip> = {};
+
+      if (section === 'plan') {
+        updates.plan = transformDays(data);
+      } else if (section === 'stays') {
+        updates.stays = transformStays(data);
+      } else if (section === 'flights') {
+        updates.flights = transformFlights(data);
+      }
+
+      return {
+        currentTrip: { ...s.currentTrip, ...updates },
+        updatedSections: { ...s.updatedSections, [section]: Date.now() },
+      };
+    });
+  },
 }));

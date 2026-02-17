@@ -8,7 +8,14 @@ import { useAuthStore } from '@/store/authStore';
 function App() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { handleOAuthCallback } = useAuthStore();
+  const { handleOAuthCallback, fetchCurrentUser, isAuthenticated, user } = useAuthStore();
+
+  // Restore user from token on app load
+  useEffect(() => {
+    if (isAuthenticated && !user) {
+      fetchCurrentUser();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle OAuth callback
   useEffect(() => {
