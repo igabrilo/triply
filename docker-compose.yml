@@ -1,39 +1,19 @@
 version: '3.8'
 
 services:
-  db:
-    image: postgres:16-alpine
-    container_name: triply-db
-    restart: unless-stopped
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: triply
-      POSTGRES_PASSWORD: triply_dev
-      POSTGRES_DB: triply
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-
   backend:
     build: ./backend
     container_name: triply-backend
     ports:
       - "5001:5000"
+    env_file:
+      - ./backend/.env
     environment:
       - FLASK_ENV=development
-      - DATABASE_URL=postgresql://triply:triply_dev@db:5432/triply
-      - SECRET_KEY=dev-secret-key-change-in-production
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENAI_MODEL_GENERATION=${OPENAI_MODEL_GENERATION:-gpt-5.2}
-      - OPENAI_MODEL_CHAT=${OPENAI_MODEL_CHAT:-gpt-5-mini}
-      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
     volumes:
       - ./backend:/app
     command: >
       sh -c "flask db upgrade && python run.py"
-    depends_on:
-      db:
-        condition: service_started
 
   frontend:
     build: ./frontend
@@ -46,9 +26,6 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    command: sh -c "npm install && npm run dev -- --host"
+    command: sh -c "npm run dev -- --host"
     depends_on:
       - backend
-
-volumes:
-  pgdata:

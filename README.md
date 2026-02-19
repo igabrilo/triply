@@ -1,6 +1,6 @@
 # Triply
 
-Triply is a travel planner app with a **React/Vite** frontend and a **Flask** backend backed by **PostgreSQL** (normalized schema, managed via **Flask-Migrate/Alembic**).
+Triply is a travel planner app with a **React/Vite** frontend and a **Flask** backend backed by **PostgreSQL on Supabase Cloud** (normalized schema, managed via **Flask-Migrate/Alembic**).
 
 More detail in wiki page.
 
@@ -10,17 +10,19 @@ Base44: https://trippiz-ae8ac518.base44.app
 
 - `frontend/`: React + Vite app
 - `backend/`: Flask API + SQLAlchemy models + Alembic migrations
-- `docker-compose.yml`: local dev stack (db + backend + frontend)
+- `docker-compose.yml`: dev stack (backend + frontend; database is on Supabase)
 
 ## Prerequisites
 
 - Docker + Docker Compose
+- A **Supabase** project (free tier is fine) — you'll need the **Session Pooler** and **Direct Connection** strings from *Settings → Database*
 - (Optional) Python 3.11+ if you want to run backend outside Docker
 - (Optional) Node 18+ if you want to run frontend outside Docker
 
 ## Quickstart (recommended: Docker)
 
-From repo root:
+1. Copy `backend/.env.example` → `backend/.env` and fill in your Supabase connection strings (see below).
+2. From repo root:
 
 ```bash
 docker compose up --build
@@ -30,7 +32,7 @@ Services/ports:
 
 - **Frontend**: `http://localhost:3000`
 - **Backend API**: `http://localhost:5001/api`
-- **PostgreSQL**: `localhost:5432` (user: `triply`, password: `triply_dev`, db: `triply`)
+- **PostgreSQL**: hosted on Supabase Cloud (no local DB needed)
 
 The backend container runs migrations on startup:
 
@@ -38,13 +40,18 @@ The backend container runs migrations on startup:
 
 ## Environment variables
 
-### Backend
+### Backend (`backend/.env`)
 
-- `SECRET_KEY`: used for signing JWTs (dev default exists; change in production)
-- `DATABASE_URL`: SQLAlchemy database URL
-- `CORS_ORIGINS`: comma-separated origins (defaults to `http://localhost:3000`)
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | ✅ | Supabase **Session Pooler** connection string (`?sslmode=require`) |
+| `MIGRATION_DATABASE_URL` | ✅ | Supabase **Direct Connection** string (`?sslmode=require`) — used by Alembic |
+| `SECRET_KEY` | ✅ | Used for signing JWTs (change in production) |
+| `CORS_ORIGINS` | | Comma-separated origins (defaults to `http://localhost:3000`) |
+| `OPENAI_API_KEY` | ✅ | Required for trip generation and chat |
+| `GOOGLE_MAPS_API_KEY` | | Optional — enables real geocoding |
 
-See `backend/.env.example`.
+See `backend/.env` for the full list including OAuth keys.
 
 ### Frontend
 
@@ -54,6 +61,8 @@ See `backend/.env.example`.
 See `frontend/.env.example` and `frontend/vite.config.ts`.
 
 ## Database & migrations
+
+The database is hosted on **Supabase Cloud**. Alembic migrations use `MIGRATION_DATABASE_URL` (direct connection) to apply schema changes.
 
 Migrations live in:
 
@@ -105,18 +114,11 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-2) Point `DATABASE_URL` to a PostgreSQL instance and run migrations:
+2) Make sure `backend/.env` has your Supabase connection strings, then:
 
 ```bash
-export DATABASE_URL="postgresql://triply:triply_dev@localhost:5432/triply"
 flask db upgrade
 python run.py
-```
-
-To provision a local `triply` role/db (if you’re not using Docker PostgreSQL), you can run:
-
-```bash
-psql -U <your_pg_superuser> -f backend/scripts/init_db.sql
 ```
 
 ### Frontend (local)
@@ -136,16 +138,5 @@ cd backend
 pytest
 ```
 
-## Troubleshooting
 
-### “role triply does not exist” when connecting to localhost:5432
-
-On macOS it’s common to have **two** PostgreSQL servers: one local (Homebrew) and one in Docker.
-If local Postgres is bound to `localhost:5432`, your host `psql` might hit the local instance instead of Docker.
-
-Options:
-
-- Stop local Postgres (Homebrew service), then use Docker’s `localhost:5432`
-- Or change Docker’s published port (e.g. map `5433:5432`) if you need both running
-- Or use `docker exec triply-db psql ...` to always connect to the Docker database
 

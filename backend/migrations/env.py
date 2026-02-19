@@ -36,7 +36,15 @@ def get_engine_url():
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-config.set_main_option('sqlalchemy.url', get_engine_url())
+
+# Use MIGRATION_DATABASE_URL (Supabase direct connection) for migrations
+# if available; otherwise fall back to the app's SQLALCHEMY_DATABASE_URI.
+import os
+_migration_url = os.getenv('MIGRATION_DATABASE_URL')
+if _migration_url:
+    config.set_main_option('sqlalchemy.url', _migration_url.replace('%', '%%'))
+else:
+    config.set_main_option('sqlalchemy.url', get_engine_url())
 target_db = current_app.extensions['migrate'].db
 
 # other values from the config, defined by the needs of env.py,
