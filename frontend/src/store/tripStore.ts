@@ -173,7 +173,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       set({ currentTrip: trip });
 
       // Open SSE stream (fire-and-forget – updates arrive asynchronously)
-      const eventSource = tripAPI.streamGeneration(tripId);
+      const eventSource = await tripAPI.streamGeneration(tripId);
 
       eventSource.addEventListener('status', (e: MessageEvent) => {
         const data = JSON.parse(e.data);

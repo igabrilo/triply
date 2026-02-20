@@ -1,41 +1,26 @@
 import json
 import logging
 
-from flask import Response, jsonify, request, stream_with_context
+from flask import Response, g, jsonify, request, stream_with_context
 from app.routes import api_bp
-from app.services.auth_service import AuthService
+from app.utils.auth import require_auth
 from app.services.trip_service import TripService
 
 logger = logging.getLogger(__name__)
-
-
-def _get_user():
-    """Helper to extract authenticated user from token.
-
-    Checks Authorization header first, then falls back to ?token= query
-    parameter (needed for SSE / EventSource which can't set headers).
-    """
-    token = request.headers.get('Authorization', '').replace('Bearer ', '')
-    if not token:
-        token = request.args.get('token', '')
-    if not token:
-        return None
-    return AuthService.get_user_from_token(token)
 
 
 # ------------------------------------------------------------------
 # Create trip + start AI generation (returns trip id immediately)
 # ------------------------------------------------------------------
 @api_bp.route('/trips', methods=['POST'])
+@require_auth
 def create_trip():
     """Create a new trip record and return it.
 
     The frontend should then open an SSE connection to
     GET /trips/<id>/stream to receive generated sections progressively.
     """
-    user = _get_user()
-    if not user:
-        return jsonify({'success': False, 'message': 'Authentication required'}), 401
+    user = g.current_user
 
     data = request.get_json()
     if not data:
@@ -50,6 +35,7 @@ def create_trip():
 # SSE streaming endpoint – generates trip sections progressively
 # ------------------------------------------------------------------
 @api_bp.route('/trips/<trip_id>/stream', methods=['GET'])
+@require_auth
 def stream_trip_generation(trip_id):
     """Server-Sent Events endpoint that drives the AI generation pipeline.
 
@@ -59,9 +45,7 @@ def stream_trip_generation(trip_id):
       - done: { "tripId": "..." }
       - error: { "message": "..." }
     """
-    user = _get_user()
-    if not user:
-        return jsonify({'success': False, 'message': 'Authentication required'}), 401
+    user = g.current_user
 
     trip = TripService.get_trip(trip_id, str(user.id))
     if not trip:
@@ -150,11 +134,10 @@ def stream_trip_generation(trip_id):
 # Standard CRUD
 # ------------------------------------------------------------------
 @api_bp.route('/trips', methods=['GET'])
+@require_auth
 def get_trips():
     """Get all trips for the authenticated user (summary list)."""
-    user = _get_user()
-    if not user:
-        return jsonify({'success': False, 'message': 'Authentication required'}), 401
+    user = g.current_user
 
     trips = TripService.get_user_trips(str(user.id))
     return jsonify({
@@ -164,11 +147,10 @@ def get_trips():
 
 
 @api_bp.route('/trips/<trip_id>', methods=['GET'])
+@require_auth
 def get_trip(trip_id):
     """Get a specific trip with full details."""
-    user = _get_user()
-    if not user:
-        return jsonify({'success': False, 'message': 'Authentication required'}), 401
+    user = g.current_user
 
     trip = TripService.get_trip(trip_id, str(user.id))
     if not trip:
@@ -178,11 +160,10 @@ def get_trip(trip_id):
 
 
 @api_bp.route('/trips/<trip_id>', methods=['PUT'])
+@require_auth
 def update_trip(trip_id):
     """Update a trip (scoped edit)."""
-    user = _get_user()
-    if not user:
-        return jsonify({'success': False, 'message': 'Authentication required'}), 401
+    user = g.current_user
 
     data = request.get_json()
     if not data:
@@ -196,11 +177,10 @@ def update_trip(trip_id):
 
 
 @api_bp.route('/trips/<trip_id>', methods=['DELETE'])
+@require_auth
 def delete_trip(trip_id):
     """Delete a trip."""
-    user = _get_user()
-    if not user:
-        return jsonify({'success': False, 'message': 'Authentication required'}), 401
+    user = g.current_user
 
     deleted = TripService.delete_trip(trip_id, str(user.id))
     if not deleted:

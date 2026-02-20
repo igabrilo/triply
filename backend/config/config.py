@@ -21,11 +21,8 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     CORS_ORIGINS = os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(',')
 
-    # Session configuration (needed for OAuth state storage)
-    SESSION_TYPE = 'filesystem'
-    SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
-    SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SAMESITE = 'Lax'
+    # Supabase Auth (only URL needed — JWT verified via public JWKS endpoint)
+    SUPABASE_URL = os.getenv('SUPABASE_URL', '')
 
     # OpenAI
     OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
