@@ -28,6 +28,6 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    command: sh -c "npm run dev -- --host"
+    command: sh -c "npm install --legacy-peer-deps && npm run dev -- --host"
     depends_on:
       - backend

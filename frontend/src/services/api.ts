@@ -84,6 +84,11 @@ export const tripAPI = {
     return data;
   },
 
+  async geocodeTrip(tripId: string) {
+    const { data } = await apiClient.post(`/trips/${tripId}/geocode`);
+    return data;
+  },
+
   /**
    * Open an SSE connection to stream trip generation progress.
    *

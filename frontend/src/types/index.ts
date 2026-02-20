@@ -79,6 +79,11 @@ export interface Activity {
   links: ActivityLink[];
   status: 'planned' | 'saved' | 'must-do' | 'skip';
   tags: string[];
+  category?: string;
+  lat?: number | null;
+  lng?: number | null;
+  locationName?: string;
+  address?: string;
 }
 
 export interface ActivityLink {

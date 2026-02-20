@@ -176,6 +176,51 @@ def update_trip(trip_id):
     return jsonify({'success': True, 'trip': trip.to_dict(include_details=True)}), 200
 
 
+@api_bp.route('/trips/<trip_id>/geocode', methods=['POST'])
+@require_auth
+def geocode_trip(trip_id):
+    """Re-geocode all plan items for an existing trip.
+
+    Useful when a trip was generated before a Google Maps API key was configured,
+    or when geocoding previously failed.
+    """
+    from app.services.geocoding_service import geocode_place
+    from app import db as _db
+    from app.models.plan_item import PlanItem
+    from app.models.trip_day import TripDay
+
+    user = g.current_user
+    trip = TripService.get_trip(trip_id, str(user.id))
+    if not trip:
+        return jsonify({'success': False, 'message': 'Trip not found'}), 404
+
+    updated = 0
+    for day in trip.days:
+        for item in day.plan_items:
+            if item.lat is not None and item.lng is not None:
+                continue  # already geocoded
+            query = item.location_name or item.title or ''
+            if not query:
+                continue
+            geo = geocode_place(query)
+            if geo['lat'] is not None:
+                item.lat = geo['lat']
+                item.lng = geo['lng']
+                item.address = item.address or geo['address']
+                item.location_name = item.location_name or geo['location_name']
+                item.maps_url = item.maps_url or geo['maps_url']
+                updated += 1
+
+    _db.session.commit()
+    _db.session.refresh(trip)
+
+    return jsonify({
+        'success': True,
+        'updatedItems': updated,
+        'trip': trip.to_dict(include_details=True),
+    }), 200
+
+
 @api_bp.route('/trips/<trip_id>', methods=['DELETE'])
 @require_auth
 def delete_trip(trip_id):
