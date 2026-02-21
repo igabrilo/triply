@@ -89,7 +89,13 @@ def geocode_place(query: str) -> dict:
                 result['lng'] = float(place['lon'])
                 display = place.get('display_name', '')
                 result['location_name'] = display.split(',')[0].strip() if display else None
-                result['address'] = display
+                # Shorten Nominatim's verbose display_name to city + country
+                parts = [p.strip() for p in display.split(',')]
+                non_postal = [p for p in parts if not any(c.isdigit() for c in p)]
+                if len(non_postal) > 2:
+                    result['address'] = ', '.join(non_postal[-2:])
+                else:
+                    result['address'] = ', '.join(non_postal)
         except Exception as exc:
             logger.warning("Nominatim geocoding failed for %r: %s", query, exc)
 

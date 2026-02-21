@@ -9,7 +9,7 @@ interface ModalProps {
   children: ReactNode;
   title?: string;
   subtitle?: string;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
 export default function Modal({ isOpen, onClose, children, title, subtitle, size = 'md' }: ModalProps) {
@@ -27,7 +27,7 @@ export default function Modal({ isOpen, onClose, children, title, subtitle, size
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className="modal-backdrop"
+          className={clsx('modal-backdrop', size === 'xl' && 'modal-backdrop-xl')}
           onClick={onClose}
         >
           <motion.div
