@@ -1028,6 +1028,7 @@ select {
   overflow: hidden;
   border: 1px solid var(--navy-100);
   box-shadow: var(--shadow-sm);
+  isolation: isolate;
 }
 
 .map-container .leaflet-container {
@@ -1174,6 +1175,7 @@ select {
   border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1px solid var(--navy-100);
+  isolation: isolate;
 }
 
 .map-expanded-map .leaflet-container {

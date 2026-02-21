@@ -11,6 +11,7 @@ import MapSection from '@components/dashboard/MapSection';
 import ProfileSection from '@components/dashboard/ProfileSection';
 import QuickTweaks from '@components/dashboard/QuickTweaks';
 import SavedItems from '@components/dashboard/SavedItems';
+import SidebarMap from '@components/dashboard/SidebarMap';
 import ChatPanel from '@components/chat/ChatPanel';
 import { useTripStore } from '@/store/tripStore';
 
@@ -222,6 +223,7 @@ export default function Dashboard() {
           {showSidebar && (
             <div style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16 }} className="hide-mobile">
               <QuickTweaks />
+              <SidebarMap />
               <SavedItems />
             </div>
           )}
