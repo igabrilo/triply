@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { TripFormData, EditScope } from '@/types';
+import { supabase } from '@/services/supabase';
 
 const API_BASE_URL = '/api';
 
@@ -10,18 +11,16 @@ export const apiClient = axios.create({
   },
 });
 
-// Request interceptor
+// Request interceptor – attach Supabase access token
 apiClient.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('triply_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+  async (config) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      config.headers.Authorization = `Bearer ${session.access_token}`;
     }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error),
 );
 
 // Response interceptor
@@ -29,10 +28,11 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('triply_token');
+      // Session may have expired – Supabase client will auto-refresh
+      // on next getSession() call, so no need to clear localStorage.
     }
     return Promise.reject(error);
-  }
+  },
 );
 
 // ------------------------------------------------------------------
@@ -46,33 +46,11 @@ export const geocodeAPI = {
 };
 
 // ------------------------------------------------------------------
-// Auth API
+// Auth API (only profile fetch – actual auth handled by Supabase client)
 // ------------------------------------------------------------------
 export const authAPI = {
-  async register(name: string, email: string, password: string) {
-    const { data } = await apiClient.post('/auth/register', { name, email, password });
-    return data;
-  },
-
-  async login(email: string, password: string) {
-    const { data } = await apiClient.post('/auth/login', { email, password });
-    return data;
-  },
-
   async getCurrentUser() {
     const { data } = await apiClient.get('/auth/me');
-    return data;
-  },
-
-  async getGoogleAuthUrl(intent?: string) {
-    const params = intent ? { intent } : {};
-    const { data } = await apiClient.get('/auth/google', { params });
-    return data;
-  },
-
-  async getAppleAuthUrl(intent?: string) {
-    const params = intent ? { intent } : {};
-    const { data } = await apiClient.get('/auth/apple', { params });
     return data;
   },
 };
@@ -106,17 +84,23 @@ export const tripAPI = {
     return data;
   },
 
+  async geocodeTrip(tripId: string) {
+    const { data } = await apiClient.post(`/trips/${tripId}/geocode`);
+    return data;
+  },
+
   /**
    * Open an SSE connection to stream trip generation progress.
    *
-   * Returns an EventSource. The caller should listen to:
+   * Returns a Promise<EventSource>. The caller should listen to:
    *   - 'status'        → { phase: string }
    *   - 'section_ready' → { section: string, data: any[] }
    *   - 'done'          → { tripId: string }
    *   - 'error'         → { message: string }
    */
-  streamGeneration(tripId: string): EventSource {
-    const token = localStorage.getItem('triply_token');
+  async streamGeneration(tripId: string): Promise<EventSource> {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token ?? '';
     const url = `${API_BASE_URL}/trips/${tripId}/stream${token ? `?token=${token}` : ''}`;
     return new EventSource(url);
   },

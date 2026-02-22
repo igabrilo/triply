@@ -1,46 +1,37 @@
 import { create } from 'zustand';
 import type { User } from '@/types';
+import { supabase } from '@/services/supabase';
 import { authAPI } from '@/services/api';
 
 interface AuthState {
   user: User | null;
-  token: string | null;
   isAuthenticated: boolean;
+  isLoading: boolean;
   showAuthModal: boolean;
   authMode: 'signin' | 'signup';
   pendingAction: (() => void) | null;
 
   setUser: (user: User | null) => void;
-  setToken: (token: string | null) => void;
   openAuthModal: (mode?: 'signin' | 'signup', onSuccess?: () => void) => void;
   closeAuthModal: () => void;
   login: (email: string, password: string) => Promise<void>;
   signup: (name: string, email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   loginWithApple: () => Promise<void>;
-  handleOAuthCallback: (token: string) => Promise<void>;
   fetchCurrentUser: () => Promise<void>;
   logout: () => void;
+  initAuth: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
-  token: localStorage.getItem('triply_token'),
-  isAuthenticated: !!localStorage.getItem('triply_token'),
+  isAuthenticated: false,
+  isLoading: true,
   showAuthModal: false,
   authMode: 'signin',
   pendingAction: null,
 
   setUser: (user) => set({ user, isAuthenticated: !!user }),
-
-  setToken: (token) => {
-    if (token) {
-      localStorage.setItem('triply_token', token);
-    } else {
-      localStorage.removeItem('triply_token');
-    }
-    set({ token, isAuthenticated: !!token });
-  },
 
   openAuthModal: (mode = 'signin', onSuccess) =>
     set({ showAuthModal: true, authMode: mode, pendingAction: onSuccess || null }),
@@ -49,61 +40,52 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ showAuthModal: false, pendingAction: null }),
 
   login: async (email: string, password: string) => {
-    const response = await authAPI.login(email, password);
-    if (!response.success) {
-      throw new Error(response.message || 'Login failed');
-    }
-    set({ user: response.user, isAuthenticated: true });
-    get().setToken(response.token);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
+
+    // Fetch the full user profile from our backend
+    await get().fetchCurrentUser();
     const pending = get().pendingAction;
     set({ showAuthModal: false, pendingAction: null });
     if (pending) pending();
   },
 
   signup: async (name: string, email: string, password: string) => {
-    const response = await authAPI.register(name, email, password);
-    if (!response.success) {
-      throw new Error(response.message || 'Registration failed');
-    }
-    set({ user: response.user, isAuthenticated: true });
-    get().setToken(response.token);
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { name } },
+    });
+    if (error) throw new Error(error.message);
+
+    // Fetch the full user profile from our backend
+    // (the DB trigger will have created the public.users row)
+    await get().fetchCurrentUser();
     const pending = get().pendingAction;
     set({ showAuthModal: false, pendingAction: null });
     if (pending) pending();
   },
 
   loginWithGoogle: async () => {
-    // Determine intent based on whether user is generating a trip
-    const isGeneratingTrip = sessionStorage.getItem('pending_trip_generation') === 'true';
-    const intent = isGeneratingTrip ? 'generate_trip' : 'account';
-    
-    const response = await authAPI.getGoogleAuthUrl(intent);
-    if (response.success && response.authUrl) {
-      window.location.href = response.authUrl;
-    } else {
-      throw new Error('Failed to initiate Google sign-in');
-    }
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+    if (error) throw new Error(error.message);
+    // Browser will redirect to Google, then back to our app.
+    // onAuthStateChange (set up in initAuth) handles the rest.
   },
 
   loginWithApple: async () => {
-    // Determine intent based on whether user is generating a trip
-    const isGeneratingTrip = sessionStorage.getItem('pending_trip_generation') === 'true';
-    const intent = isGeneratingTrip ? 'generate_trip' : 'account';
-    
-    const response = await authAPI.getAppleAuthUrl(intent);
-    if (response.success && response.authUrl) {
-      window.location.href = response.authUrl;
-    } else {
-      throw new Error('Failed to initiate Apple sign-in');
-    }
-  },
-
-  handleOAuthCallback: async (token: string) => {
-    get().setToken(token);
-    await get().fetchCurrentUser();
-    const pending = get().pendingAction;
-    set({ showAuthModal: false, pendingAction: null });
-    if (pending) pending();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'apple',
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+    if (error) throw new Error(error.message);
   },
 
   fetchCurrentUser: async () => {
@@ -113,12 +95,36 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ user: response.user, isAuthenticated: true });
       }
     } catch {
-      get().logout();
+      set({ user: null, isAuthenticated: false });
     }
   },
 
-  logout: () => {
-    localStorage.removeItem('triply_token');
-    set({ user: null, token: null, isAuthenticated: false });
+  logout: async () => {
+    await supabase.auth.signOut();
+    set({ user: null, isAuthenticated: false });
+  },
+
+  initAuth: async () => {
+    // 1. Check for existing Supabase session
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      await get().fetchCurrentUser();
+    }
+    set({ isLoading: false });
+
+    // 2. Listen for auth state changes (login, logout, token refresh, OAuth callback)
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        await get().fetchCurrentUser();
+        // Fire any pending action (e.g. trip generation)
+        const pending = get().pendingAction;
+        if (pending) {
+          set({ pendingAction: null });
+          pending();
+        }
+      } else if (event === 'SIGNED_OUT') {
+        set({ user: null, isAuthenticated: false });
+      }
+    });
   },
 }));

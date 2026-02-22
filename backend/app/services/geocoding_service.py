@@ -48,30 +48,56 @@ def geocode_place(query: str) -> dict:
         'maps_url': _google_maps_search_url(query),
     }
 
-    if not api_key or not query:
-        return result
-
-    try:
-        resp = requests.get(
-            'https://maps.googleapis.com/maps/api/place/textsearch/json',
-            params={'query': query, 'key': api_key},
-            timeout=5,
-        )
-        data = resp.json()
-        if data.get('status') == 'OK' and data.get('results'):
-            place = data['results'][0]
-            loc = place.get('geometry', {}).get('location', {})
-            result['lat'] = loc.get('lat')
-            result['lng'] = loc.get('lng')
-            result['address'] = place.get('formatted_address')
-            result['location_name'] = place.get('name')
-            result['maps_url'] = (
-                f"https://www.google.com/maps/place/?q=place_id:{place.get('place_id', '')}"
-                if place.get('place_id')
-                else _google_maps_search_url(query)
+    if api_key and query:
+        try:
+            resp = requests.get(
+                'https://maps.googleapis.com/maps/api/place/textsearch/json',
+                params={'query': query, 'key': api_key},
+                timeout=5,
             )
-    except Exception as exc:
-        logger.warning("Geocoding failed for %r: %s", query, exc)
+            data = resp.json()
+            if data.get('status') == 'OK' and data.get('results'):
+                place = data['results'][0]
+                loc = place.get('geometry', {}).get('location', {})
+                result['lat'] = loc.get('lat')
+                result['lng'] = loc.get('lng')
+                result['address'] = place.get('formatted_address')
+                result['location_name'] = place.get('name')
+                result['maps_url'] = (
+                    f"https://www.google.com/maps/place/?q=place_id:{place.get('place_id', '')}"
+                    if place.get('place_id')
+                    else _google_maps_search_url(query)
+                )
+            else:
+                logger.debug("Google Places returned status %r for %r", data.get('status'), query)
+        except Exception as exc:
+            logger.warning("Google Maps geocoding failed for %r: %s", query, exc)
+
+    # Fallback: Nominatim (OpenStreetMap) – free, no API key required
+    if result['lat'] is None and query:
+        try:
+            resp = requests.get(
+                'https://nominatim.openstreetmap.org/search',
+                params={'q': query, 'format': 'json', 'limit': 1},
+                headers={'User-Agent': 'Triply/1.0 (travel-planner)'},
+                timeout=5,
+            )
+            places = resp.json()
+            if places:
+                place = places[0]
+                result['lat'] = float(place['lat'])
+                result['lng'] = float(place['lon'])
+                display = place.get('display_name', '')
+                result['location_name'] = display.split(',')[0].strip() if display else None
+                # Shorten Nominatim's verbose display_name to city + country
+                parts = [p.strip() for p in display.split(',')]
+                non_postal = [p for p in parts if not any(c.isdigit() for c in p)]
+                if len(non_postal) > 2:
+                    result['address'] = ', '.join(non_postal[-2:])
+                else:
+                    result['address'] = ', '.join(non_postal)
+        except Exception as exc:
+            logger.warning("Nominatim geocoding failed for %r: %s", query, exc)
 
     return result
 

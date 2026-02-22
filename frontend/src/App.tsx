@@ -1,50 +1,22 @@
 import { useEffect } from 'react';
-import { Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import Home from '@pages/Home';
 import Dashboard from '@pages/Dashboard';
 import Account from '@pages/Account';
 import { useAuthStore } from '@/store/authStore';
 
 function App() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const { handleOAuthCallback, fetchCurrentUser, isAuthenticated, user } = useAuthStore();
+  const { initAuth, isLoading } = useAuthStore();
 
-  // Restore user from token on app load
+  // Initialize Supabase auth listener on app mount
   useEffect(() => {
-    if (isAuthenticated && !user) {
-      fetchCurrentUser();
-    }
+    initAuth();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Handle OAuth callback
-  useEffect(() => {
-    const token = searchParams.get('token');
-    const intent = searchParams.get('intent');
-    const error = searchParams.get('error');
-    
-    if (token) {
-      handleOAuthCallback(token).then(() => {
-        // Clear URL params
-        setSearchParams({});
-        
-        // Navigate based on intent from backend
-        if (intent === 'generate_trip') {
-          // User was generating a trip - stay on home page
-          // (Home.tsx will auto-trigger trip generation)
-          navigate('/');
-        } else {
-          // Normal sign-in - go to account page
-          navigate('/account');
-        }
-      }).catch((err) => {
-        console.error('OAuth callback failed:', err);
-        setSearchParams({ error: 'auth_failed' });
-      });
-    } else if (error) {
-      console.error('OAuth error:', error);
-    }
-  }, [searchParams, handleOAuthCallback, navigate, setSearchParams]);
+  if (isLoading) {
+    // Optional: show nothing or a spinner while Supabase session is resolving
+    return null;
+  }
 
   return (
     <Routes>

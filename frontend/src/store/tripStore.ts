@@ -82,6 +82,11 @@ function transformDays(backendDays: any[]): PlanDay[] {
       ],
       status: item.status || 'planned',
       tags: [item.category || item.timeBlock || item.time_block].filter(Boolean) as string[],
+      category: item.category || null,
+      lat: item.lat ?? null,
+      lng: item.lng ?? null,
+      locationName: item.locationName || item.location_name || '',
+      address: item.address || '',
     })),
   }));
 }
@@ -173,7 +178,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       set({ currentTrip: trip });
 
       // Open SSE stream (fire-and-forget – updates arrive asynchronously)
-      const eventSource = tripAPI.streamGeneration(tripId);
+      const eventSource = await tripAPI.streamGeneration(tripId);
 
       eventSource.addEventListener('status', (e: MessageEvent) => {
         const data = JSON.parse(e.data);

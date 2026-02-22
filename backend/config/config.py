@@ -3,7 +3,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-PG_DEFAULT = 'postgresql://triply:triply_dev@localhost:5432/triply'
+
+def _require_env(name: str) -> str:
+    """Return env var or raise immediately so misconfig is obvious."""
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(
+            f"Required environment variable {name!r} is not set. "
+            f"Add it to backend/.env or export it in your shell."
+        )
+    return value
 
 
 class Config:
@@ -12,11 +21,8 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     CORS_ORIGINS = os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(',')
 
-    # Session configuration (needed for OAuth state storage)
-    SESSION_TYPE = 'filesystem'
-    SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
-    SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SAMESITE = 'Lax'
+    # Supabase Auth (only URL needed — JWT verified via public JWKS endpoint)
+    SUPABASE_URL = os.getenv('SUPABASE_URL', '')
 
     # OpenAI
     OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
@@ -26,17 +32,20 @@ class Config:
     # Google Maps (optional – enables real geocoding for plan items)
     GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY', '')
 
+    # Supabase PostgreSQL (direct connection for migrations)
+    MIGRATION_DATABASE_URL = os.getenv('MIGRATION_DATABASE_URL')
+
 
 class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True
-    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', PG_DEFAULT)
+    SQLALCHEMY_DATABASE_URI = _require_env('DATABASE_URL')
 
 
 class ProductionConfig(Config):
     """Production configuration"""
     DEBUG = False
-    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', PG_DEFAULT)
+    SQLALCHEMY_DATABASE_URI = _require_env('DATABASE_URL')
 
 
 class TestingConfig(Config):

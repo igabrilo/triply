@@ -1,25 +1,23 @@
 import uuid
 from datetime import datetime, timezone
 
-import bcrypt
 from sqlalchemy import Uuid
 
 from app import db
 
 
 class User(db.Model):
-    """User model for authentication and profile."""
+    """User model – synced from Supabase auth.users via DB trigger.
+
+    The primary key matches the Supabase auth.users.id UUID so that
+    all child tables can FK directly to it.
+    """
     __tablename__ = 'users'
 
     id = db.Column(Uuid, primary_key=True, default=uuid.uuid4)
     email = db.Column(db.Text, unique=True, nullable=False, index=True)
     name = db.Column(db.Text, nullable=False)
-    password_hash = db.Column(db.Text, nullable=True)  # Nullable for OAuth users
     avatar_url = db.Column(db.Text, nullable=True)
-    
-    # OAuth fields
-    oauth_provider = db.Column(db.Text, nullable=True)  # google | apple | None
-    oauth_id = db.Column(db.Text, nullable=True, index=True)  # Provider's user ID
 
     created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
@@ -41,20 +39,6 @@ class User(db.Model):
     usage_events = db.relationship('UsageEvent', back_populates='user', lazy='dynamic')
     notification_events = db.relationship('NotificationEvent', back_populates='user', lazy='dynamic')
 
-    # --- Password helpers ---
-    def set_password(self, password: str):
-        self.password_hash = bcrypt.hashpw(
-            password.encode('utf-8'), bcrypt.gensalt(),
-        ).decode('utf-8')
-
-    def check_password(self, password: str) -> bool:
-        if not self.password_hash:
-            return False  # OAuth users don't have password
-        return bcrypt.checkpw(
-            password.encode('utf-8'),
-            self.password_hash.encode('utf-8'),
-        )
-
     # --- Serialization ---
     def to_dict(self):
         return {
@@ -62,7 +46,6 @@ class User(db.Model):
             'email': self.email,
             'name': self.name,
             'avatar': self.avatar_url,
-            'oauthProvider': self.oauth_provider,
             'preferences': self.preferences.to_dict() if self.preferences else None,
             'notificationPreferences': (
                 self.notification_preferences.to_dict() if self.notification_preferences else None
