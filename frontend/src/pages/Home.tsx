@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, useScroll, useTransform } from 'framer-motion';
 import Layout from '@components/layout/Layout';
 import HeroSection from '@components/home/HeroSection';
 import TripForm from '@components/home/TripForm';
@@ -15,10 +15,15 @@ import { useAuthStore } from '@/store/authStore';
 
 /* ─── Form section with rotating background images ─── */
 function FormWithBackground() {
+  const sectionRef = useRef(null);
   const { bgImages, currentImg, prevImg } = useBackgroundImages(10000);
+
+  const { scrollYProgress } = useScroll({ target: sectionRef, offset: ['start end', 'start start'] });
+  const bgScale = useTransform(scrollYProgress, [0, 1], [1.18, 1]);
 
   return (
     <div
+      ref={sectionRef}
       id="trip-form-section"
       style={{
         minHeight: '100vh',
@@ -30,7 +35,10 @@ function FormWithBackground() {
         overflow: 'hidden',
       }}
     >
-      <CrossfadeBackground bgImages={bgImages} currentImg={currentImg} prevImg={prevImg} overlayOpacity={0.85} />
+      {/* Scroll-zoom background wrapper */}
+      <motion.div style={{ position: 'absolute', inset: 0, scale: bgScale, transformOrigin: 'center center' }}>
+        <CrossfadeBackground bgImages={bgImages} currentImg={currentImg} prevImg={prevImg} overlayOpacity={0.85} />
+      </motion.div>
 
       <motion.div
         initial={{ opacity: 0, y: 40 }}
