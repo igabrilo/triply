@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { MapPin, Calendar, Users, Sparkles, Navigation, Loader } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
 import { useAuthStore } from '@/store/authStore';
@@ -45,12 +45,6 @@ export default function TripForm() {
   const [locationError, setLocationError] = useState('');
   
   const ref = useRef(null);
-  const { scrollYProgress } = useScroll({
-    target: ref,
-    offset: ["start end", "end start"]
-  });
-
-  const y = useTransform(scrollYProgress, [0, 1], [50, -50]);
 
   // Auto-detect location on mount (if not already set)
   useEffect(() => {
@@ -174,7 +168,7 @@ export default function TripForm() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
       className="card card-hover"
-      style={{ maxWidth: 540, margin: '0 auto', padding: '28px 32px', y }}
+      style={{ maxWidth: 540, margin: '0 auto', padding: '28px 32px' }}
     >
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>

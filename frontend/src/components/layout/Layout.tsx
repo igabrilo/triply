@@ -5,9 +5,10 @@ import AuthModal from '@components/auth/AuthModal';
 interface LayoutProps {
   children: ReactNode;
   showBlobs?: boolean;
+  fullViewport?: boolean;
 }
 
-export default function Layout({ children, showBlobs = true }: LayoutProps) {
+export default function Layout({ children, showBlobs = true, fullViewport = false }: LayoutProps) {
   return (
     <div className="relative min-h-screen">
       {/* Background Blobs */}
@@ -21,7 +22,7 @@ export default function Layout({ children, showBlobs = true }: LayoutProps) {
       <Navbar />
 
       {/* Main Content */}
-      <main className="relative z-10 pt-16">
+      <main className={`relative z-10${fullViewport ? '' : ' pt-16'}`}>
         {children}
       </main>
 

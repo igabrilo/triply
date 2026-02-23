@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import Layout from '@components/layout/Layout';
 import HeroSection from '@components/home/HeroSection';
 import TripForm from '@components/home/TripForm';
@@ -7,8 +8,42 @@ import FeaturesSection from '@components/home/FeaturesSection';
 import HowItWorks from '@components/home/HowItWorks';
 import PricingSection from '@components/home/PricingSection';
 import Footer from '@components/home/Footer';
+import CrossfadeBackground from '@components/home/CrossfadeBackground';
+import { useBackgroundImages } from '@/hooks/useBackgroundImages';
 import { useTripStore } from '@/store/tripStore';
 import { useAuthStore } from '@/store/authStore';
+
+/* ─── Form section with rotating background images ─── */
+function FormWithBackground() {
+  const { bgImages, currentImg, prevImg } = useBackgroundImages(10000);
+
+  return (
+    <div
+      id="trip-form-section"
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '80px 16px',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      <CrossfadeBackground bgImages={bgImages} currentImg={currentImg} prevImg={prevImg} overlayOpacity={0.85} />
+
+      <motion.div
+        initial={{ opacity: 0, y: 40 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, amount: 0.2 }}
+        transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+        style={{ width: '100%', position: 'relative', zIndex: 2 }}
+      >
+        <TripForm />
+      </motion.div>
+    </div>
+  );
+}
 
 export default function Home() {
   const navigate = useNavigate();
@@ -38,16 +73,32 @@ export default function Home() {
   }, []);
 
   return (
-    <Layout showBlobs>
-      <div className="px-4 sm:px-6 lg:px-8 pt-48 pb-16 sm:pt-56 sm:pb-24" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-        <HeroSection />
-        <TripForm />
+    <Layout showBlobs fullViewport>
+      {/* ── Section 1: Full-viewport Hero ── */}
+      <HeroSection />
+
+      {/* ── Section 2: Trip Form (full screen with background images) ── */}
+      <FormWithBackground />
+
+      {/* ── Section 3: Features ── */}
+      <div style={{ padding: '80px 16px' }}>
         <FeaturesSection />
-        <HowItWorks />
-        <PricingSection />
-        <Footer />
       </div>
 
+      {/* ── Section 4: How it Works (centered) ── */}
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 16px' }}>
+        <HowItWorks />
+      </div>
+
+      {/* ── Section 5: Pricing (centered) ── */}
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 16px' }}>
+        <PricingSection />
+      </div>
+
+      {/* ── Footer ── */}
+      <div style={{ padding: '40px 16px 60px' }}>
+        <Footer />
+      </div>
     </Layout>
   );
 }
