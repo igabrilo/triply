@@ -26,6 +26,7 @@ export { default as PlanSection } from './dashboard/PlanSection';
 export { default as FlightsSection } from './dashboard/FlightsSection';
 export { default as StaysSection } from './dashboard/StaysSection';
 export { default as MapSection } from './dashboard/MapSection';
+export { default as WeatherSection } from './dashboard/WeatherSection';
 export { default as ProfileSection } from './dashboard/ProfileSection';
 export { default as QuickTweaks } from './dashboard/QuickTweaks';
 export { default as SavedItems } from './dashboard/SavedItems';

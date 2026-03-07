@@ -8,6 +8,7 @@ import PlanSection from '@components/dashboard/PlanSection';
 import FlightsSection from '@components/dashboard/FlightsSection';
 import StaysSection from '@components/dashboard/StaysSection';
 import MapSection from '@components/dashboard/MapSection';
+import WeatherSection from '@components/dashboard/WeatherSection';
 import ProfileSection from '@components/dashboard/ProfileSection';
 import QuickTweaks from '@components/dashboard/QuickTweaks';
 import SavedItems from '@components/dashboard/SavedItems';
@@ -171,13 +172,14 @@ export default function Dashboard() {
       case 'plan': return <PlanSection />;
       case 'flights': return <FlightsSection />;
       case 'stays': return <StaysSection />;
+      case 'weather': return <WeatherSection />;
       case 'map': return <MapSection />;
       case 'profile': return <ProfileSection />;
       default: return <PlanSection />;
     }
   };
 
-  const showSidebar = activeTab === 'plan' || activeTab === 'flights' || activeTab === 'stays';
+  const showSidebar = activeTab === 'plan' || activeTab === 'flights' || activeTab === 'stays' || activeTab === 'weather';
 
   return (
     <Layout showBlobs={false}>
