@@ -4,7 +4,7 @@ import {
   CloudOff, ChevronDown, Droplets, Wind, RefreshCw,
 } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
-import { useWeather, getWeatherIcon, getWeatherIconBg, convertTemp } from '@/hooks/useWeather';
+import { useWeather, getWeatherIcon, getWeatherIconBg, getWeatherIconColor, convertTemp } from '@/hooks/useWeather';
 import type { TemperatureUnit, WeatherDay } from '@/types';
 
 /* ─── Helpers ─── */
@@ -154,7 +154,7 @@ export default function WeatherSection() {
             fontSize: 13, color: 'var(--primary-700)', lineHeight: 1.5,
           }}
         >
-          Forecasts are available up to 5 days ahead. Remaining days will appear as your trip approaches.
+          Daily forecasts cover up to 16 days ahead. Remaining days will appear as your trip approaches.
         </motion.div>
       )}
 
@@ -238,6 +238,8 @@ export default function WeatherSection() {
 
             const Icon = getWeatherIcon(day.weatherCode);
             const iconBg = getWeatherIconBg(day.weatherCode);
+            const iconColor = getWeatherIconColor(day.weatherCode);
+            const hasHourly = day.hourly.length > 0;
 
             return (
               <motion.div
@@ -248,13 +250,13 @@ export default function WeatherSection() {
               >
                 {/* ─── Day summary card ─── */}
                 <div
-                  onClick={() => toggleExpand(date)}
+                  onClick={hasHourly ? () => toggleExpand(date) : undefined}
                   style={{
                     padding: '18px 22px',
                     border: expanded ? '1px solid var(--primary-200)' : '1px solid var(--navy-100)',
                     borderRadius: expanded ? '14px 14px 0 0' : 14,
                     background: 'var(--surface)',
-                    cursor: 'pointer',
+                    cursor: hasHourly ? 'pointer' : 'default',
                     transition: 'border-color 0.2s, box-shadow 0.2s',
                     display: 'flex',
                     alignItems: 'center',
@@ -263,11 +265,11 @@ export default function WeatherSection() {
                 >
                   {/* Weather icon */}
                   <div style={{
-                    width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+                    width: 44, height: 44, borderRadius: 12, flexShrink: 0,
                     background: iconBg, display: 'flex',
                     alignItems: 'center', justifyContent: 'center',
                   }}>
-                    <Icon size={18} style={{ color: 'var(--navy-700)' }} />
+                    <Icon size={22} style={{ color: iconColor }} />
                   </div>
 
                   {/* Day info */}
@@ -305,14 +307,16 @@ export default function WeatherSection() {
                     </span>
                   </div>
 
-                  {/* Chevron */}
-                  <motion.div
-                    animate={{ rotate: expanded ? 180 : 0 }}
-                    transition={{ duration: 0.2 }}
-                    style={{ flexShrink: 0, color: 'var(--navy-400)' }}
-                  >
-                    <ChevronDown size={16} />
-                  </motion.div>
+                  {/* Chevron — only when hourly detail available */}
+                  {hasHourly && (
+                    <motion.div
+                      animate={{ rotate: expanded ? 180 : 0 }}
+                      transition={{ duration: 0.2 }}
+                      style={{ flexShrink: 0, color: 'var(--navy-400)' }}
+                    >
+                      <ChevronDown size={16} />
+                    </motion.div>
+                  )}
                 </div>
 
                 {/* ─── Expanded hourly detail ─── */}
@@ -355,6 +359,7 @@ export default function WeatherSection() {
                         {/* Hourly rows */}
                         {day.hourly.map((h, hIdx) => {
                           const HIcon = getWeatherIcon(h.weatherCode, h.icon.endsWith('n'));
+                          const hIconColor = getWeatherIconColor(h.weatherCode);
                           const hBg = hIdx % 2 === 0 ? 'transparent' : 'var(--navy-50)';
                           return (
                             <div
@@ -374,7 +379,7 @@ export default function WeatherSection() {
                                 background: getWeatherIconBg(h.weatherCode),
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                               }}>
-                                <HIcon size={14} style={{ color: 'var(--navy-700)' }} />
+                                <HIcon size={14} style={{ color: hIconColor }} />
                               </div>
                               <span style={{ flex: 1, fontSize: 13, color: 'var(--navy-600)', textTransform: 'capitalize' }}>
                                 {h.weatherDesc}

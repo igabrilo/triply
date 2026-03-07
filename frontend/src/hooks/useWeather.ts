@@ -15,7 +15,30 @@ interface OWMGeoResult {
   country: string;
 }
 
-interface OWMForecastEntry {
+/** 16-day daily forecast entry (Developer plan) */
+interface OWMDailyEntry {
+  dt: number;
+  temp: { day: number; min: number; max: number; night: number; eve: number; morn: number };
+  feels_like: { day: number; night: number; eve: number; morn: number };
+  pressure: number;
+  humidity: number;
+  weather: { id: number; main: string; description: string; icon: string }[];
+  speed: number;
+  deg: number;
+  gust: number;
+  clouds: number;
+  pop: number;
+  rain?: number;
+  snow?: number;
+}
+
+interface OWMDailyResponse {
+  list: OWMDailyEntry[];
+  city: { name: string; coord: { lat: number; lon: number } };
+}
+
+/** Hourly / 3-hour forecast entry */
+interface OWMHourlyEntry {
   dt: number;
   main: { temp: number; feels_like: number; temp_min: number; temp_max: number; humidity: number };
   weather: { id: number; main: string; description: string; icon: string }[];
@@ -23,8 +46,8 @@ interface OWMForecastEntry {
   pop: number;
 }
 
-interface OWMForecastResponse {
-  list: OWMForecastEntry[];
+interface OWMHourlyResponse {
+  list: OWMHourlyEntry[];
   city: { name: string; coord: { lat: number; lon: number } };
 }
 
@@ -49,13 +72,45 @@ async function geocodeCity(city: string, apiKey: string): Promise<{ lat: number;
   return coords;
 }
 
-/* ─── Forecast fetch + transform ─── */
+/* ─── Transform helpers ─── */
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-function transformForecast(raw: OWMForecastResponse, startDate: string, endDate: string): WeatherDay[] {
-  // Group 3-hour entries by date
-  const grouped = new Map<string, OWMForecastEntry[]>();
+/** Build WeatherDay[] from the Developer plan 16-day daily + 4-day hourly responses. */
+function transformDaily(
+  daily: OWMDailyResponse,
+  hourlyByDate: Map<string, WeatherHourly[]>,
+  startDate: string,
+  endDate: string,
+): WeatherDay[] {
+  const days: WeatherDay[] = [];
+
+  for (const entry of daily.list) {
+    const date = new Date(entry.dt * 1000).toISOString().slice(0, 10);
+    if (date < startDate || date > endDate) continue;
+
+    days.push({
+      date,
+      dayOfWeek: WEEKDAYS[new Date(date + 'T12:00:00').getDay()],
+      tempMin: entry.temp.min,
+      tempMax: entry.temp.max,
+      weatherCode: entry.weather[0].id,
+      weatherMain: entry.weather[0].main,
+      weatherDesc: entry.weather[0].description,
+      icon: entry.weather[0].icon,
+      pop: entry.pop,
+      humidity: entry.humidity,
+      windSpeed: Math.round(entry.speed * 10) / 10,
+      hourly: hourlyByDate.get(date) || [],
+    });
+  }
+
+  return days.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Fallback: build WeatherDay[] from the free 5-day/3-hour forecast. */
+function transformForecastFallback(raw: OWMHourlyResponse, startDate: string, endDate: string): WeatherDay[] {
+  const grouped = new Map<string, OWMHourlyEntry[]>();
 
   for (const entry of raw.list) {
     const date = new Date(entry.dt * 1000).toISOString().slice(0, 10);
@@ -66,52 +121,66 @@ function transformForecast(raw: OWMForecastResponse, startDate: string, endDate:
   const days: WeatherDay[] = [];
 
   for (const [date, entries] of grouped) {
-    // Filter to trip date range
     if (date < startDate || date > endDate) continue;
 
     const tempMins = entries.map(e => e.main.temp_min);
     const tempMaxs = entries.map(e => e.main.temp_max);
-
-    // Pick the most representative weather (prefer midday entries 9-15h)
-    const middayEntries = entries.filter(e => {
-      const h = new Date(e.dt * 1000).getUTCHours();
-      return h >= 9 && h <= 15;
-    });
-    const representative = middayEntries.length > 0 ? middayEntries[0] : entries[Math.floor(entries.length / 2)];
-
-    const dateObj = new Date(date + 'T12:00:00');
-
-    const hourly: WeatherHourly[] = entries.map(e => ({
-      dt: e.dt,
-      temp: e.main.temp,
-      feelsLike: e.main.feels_like,
-      humidity: e.main.humidity,
-      windSpeed: e.wind.speed,
-      windDeg: e.wind.deg,
-      pop: e.pop,
-      weatherCode: e.weather[0].id,
-      weatherMain: e.weather[0].main,
-      weatherDesc: e.weather[0].description,
-      icon: e.weather[0].icon,
-    }));
+    const midday = entries.filter(e => { const h = new Date(e.dt * 1000).getUTCHours(); return h >= 9 && h <= 15; });
+    const rep = midday.length > 0 ? midday[0] : entries[Math.floor(entries.length / 2)];
 
     days.push({
       date,
-      dayOfWeek: WEEKDAYS[dateObj.getDay()],
+      dayOfWeek: WEEKDAYS[new Date(date + 'T12:00:00').getDay()],
       tempMin: Math.min(...tempMins),
       tempMax: Math.max(...tempMaxs),
-      weatherCode: representative.weather[0].id,
-      weatherMain: representative.weather[0].main,
-      weatherDesc: representative.weather[0].description,
-      icon: representative.weather[0].icon,
+      weatherCode: rep.weather[0].id,
+      weatherMain: rep.weather[0].main,
+      weatherDesc: rep.weather[0].description,
+      icon: rep.weather[0].icon,
       pop: Math.max(...entries.map(e => e.pop)),
       humidity: Math.round(entries.reduce((s, e) => s + e.main.humidity, 0) / entries.length),
       windSpeed: Math.round((entries.reduce((s, e) => s + e.wind.speed, 0) / entries.length) * 10) / 10,
-      hourly,
+      hourly: entries.map(e => ({
+        dt: e.dt,
+        temp: e.main.temp,
+        feelsLike: e.main.feels_like,
+        humidity: e.main.humidity,
+        windSpeed: e.wind.speed,
+        windDeg: e.wind.deg,
+        pop: e.pop,
+        weatherCode: e.weather[0].id,
+        weatherMain: e.weather[0].main,
+        weatherDesc: e.weather[0].description,
+        icon: e.weather[0].icon,
+      })),
     });
   }
 
   return days.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function groupHourlyByDate(raw: OWMHourlyResponse): Map<string, WeatherHourly[]> {
+  const grouped = new Map<string, WeatherHourly[]>();
+
+  for (const entry of raw.list) {
+    const date = new Date(entry.dt * 1000).toISOString().slice(0, 10);
+    if (!grouped.has(date)) grouped.set(date, []);
+    grouped.get(date)!.push({
+      dt: entry.dt,
+      temp: entry.main.temp,
+      feelsLike: entry.main.feels_like,
+      humidity: entry.main.humidity,
+      windSpeed: entry.wind.speed,
+      windDeg: entry.wind.deg,
+      pop: entry.pop,
+      weatherCode: entry.weather[0].id,
+      weatherMain: entry.weather[0].main,
+      weatherDesc: entry.weather[0].description,
+      icon: entry.weather[0].icon,
+    });
+  }
+
+  return grouped;
 }
 
 /* ─── Icon mapper ─── */
@@ -140,14 +209,14 @@ export function getWeatherIconBg(code: number): string {
 }
 
 export function getWeatherIconColor(code: number): string {
-  if (code >= 200 && code < 300) return '#7c3aed'; // purple for thunderstorm
-  if (code >= 300 && code < 500) return '#3b82f6'; // blue for drizzle
-  if (code >= 500 && code < 600) return '#2563eb'; // darker blue for rain
-  if (code >= 600 && code < 700) return '#6366f1'; // indigo for snow
-  if (code >= 700 && code < 800) return '#94a3b8'; // slate for fog
-  if (code === 800) return '#f59e0b';               // amber for clear sun
-  if (code === 801) return '#f59e0b';               // amber for partly cloudy
-  return '#64748b';                                  // gray for clouds
+  if (code >= 200 && code < 300) return '#7c3aed';
+  if (code >= 300 && code < 500) return '#3b82f6';
+  if (code >= 500 && code < 600) return '#2563eb';
+  if (code >= 600 && code < 700) return '#6366f1';
+  if (code >= 700 && code < 800) return '#94a3b8';
+  if (code === 800) return '#f59e0b';
+  if (code === 801) return '#f59e0b';
+  return '#64748b';
 }
 
 /* ─── Temperature helper ─── */
@@ -172,7 +241,7 @@ export function useWeather(city: string | undefined, startDate: string, endDate:
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const cacheRef = useRef<{ city: string; fetchedAt: number; data: WeatherData } | null>(null);
+  const cacheRef = useRef<{ city: string; startDate: string; endDate: string; fetchedAt: number; data: WeatherData } | null>(null);
 
   const apiKey = import.meta.env.VITE_OPENWEATHERMAP_API_KEY as string | undefined;
 
@@ -184,7 +253,7 @@ export function useWeather(city: string | undefined, startDate: string, endDate:
 
     // Check cache
     const cached = cacheRef.current;
-    if (cached && cached.city === city && Date.now() - cached.fetchedAt < CACHE_TTL) {
+    if (cached && cached.city === city && cached.startDate === startDate && cached.endDate === endDate && Date.now() - cached.fetchedAt < CACHE_TTL) {
       setWeatherData(cached.data);
       return;
     }
@@ -194,24 +263,58 @@ export function useWeather(city: string | undefined, startDate: string, endDate:
 
     try {
       const { lat, lon } = await geocodeCity(city, apiKey);
+      const base = `https://api.openweathermap.org/data/2.5`;
+      const coords = `lat=${lat}&lon=${lon}&units=metric&appid=${apiKey}`;
 
-      const res = await fetch(
-        `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&units=metric&appid=${apiKey}`
-      );
-      if (!res.ok) throw new Error('Failed to fetch weather forecast');
+      // Fetch Developer plan endpoints + free 5-day/3-hour in parallel
+      const [dailyRes, hourlyRes, freeRes] = await Promise.all([
+        fetch(`${base}/forecast/daily?${coords}&cnt=16`),
+        fetch(`${base}/forecast/hourly?${coords}`),
+        fetch(`${base}/forecast?${coords}`),
+      ]);
 
-      const raw: OWMForecastResponse = await res.json();
-      const days = transformForecast(raw, startDate, endDate);
+      let days: WeatherDay[];
+      let cityName: string;
+
+      if (dailyRes.ok && hourlyRes.ok) {
+        // Developer plan active — merge developer hourly (4-day) with free 3-hour (day 5)
+        const jsonPromises: [Promise<OWMDailyResponse>, Promise<OWMHourlyResponse>] = [
+          dailyRes.json(),
+          hourlyRes.json(),
+        ];
+        const [dailyRaw, hourlyRaw] = await Promise.all(jsonPromises);
+        const hourlyByDate = groupHourlyByDate(hourlyRaw);
+
+        // Backfill days missing developer hourly data with free 3-hour data
+        if (freeRes.ok) {
+          const freeRaw: OWMHourlyResponse = await freeRes.json();
+          const freeByDate = groupHourlyByDate(freeRaw);
+          for (const [date, entries] of freeByDate) {
+            if (!hourlyByDate.has(date)) {
+              hourlyByDate.set(date, entries);
+            }
+          }
+        }
+
+        days = transformDaily(dailyRaw, hourlyByDate, startDate, endDate);
+        cityName = dailyRaw.city.name;
+      } else {
+        // Fall back to free 5-day/3-hour endpoint
+        if (!freeRes.ok) throw new Error('Failed to fetch weather forecast');
+        const fallbackRaw: OWMHourlyResponse = await freeRes.json();
+        days = transformForecastFallback(fallbackRaw, startDate, endDate);
+        cityName = fallbackRaw.city.name;
+      }
 
       const data: WeatherData = {
-        city: raw.city.name,
+        city: cityName,
         lat,
         lon,
         days,
         fetchedAt: Date.now(),
       };
 
-      cacheRef.current = { city, fetchedAt: Date.now(), data };
+      cacheRef.current = { city, startDate, endDate, fetchedAt: Date.now(), data };
       setWeatherData(data);
     } catch (err: any) {
       setError(err.message || 'Failed to load weather data');
