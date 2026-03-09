@@ -35,7 +35,7 @@ const dietaryOptions = ['Vegetarian', 'Vegan', 'Halal', 'Kosher', 'Gluten-free']
 
 export default function TripForm() {
   const navigate = useNavigate();
-  const { formData, updateFormData, generateTrip } = useTripStore();
+  const { formData, updateFormData, generateTrip, clearRememberedDefaults } = useTripStore();
   const { isAuthenticated, openAuthModal } = useAuthStore();
   const [destinationInput, setDestinationInput] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -294,6 +294,16 @@ export default function TripForm() {
                 onToggle={() => updateFormData({ budget: opt.value })}
               />
             ))}
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <button
+              type="button"
+              className="btn-link"
+              onClick={clearRememberedDefaults}
+              style={{ fontSize: 12 }}
+            >
+              Reset remembered defaults
+            </button>
           </div>
         </div>
 

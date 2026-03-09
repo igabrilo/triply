@@ -15,6 +15,18 @@ def _require_env(name: str) -> str:
     return value
 
 
+def _as_bool(name: str, default: bool = True) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    normalized = str(raw).strip().lower()
+    if normalized in {'1', 'true', 'yes', 'on'}:
+        return True
+    if normalized in {'0', 'false', 'no', 'off'}:
+        return False
+    return default
+
+
 class Config:
     """Base configuration"""
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -34,6 +46,11 @@ class Config:
 
     # Supabase PostgreSQL (direct connection for migrations)
     MIGRATION_DATABASE_URL = os.getenv('MIGRATION_DATABASE_URL')
+
+    # Feature flags (runtime, backend-controlled)
+    FEATURE_FIRST_PLAN_GUIDE = _as_bool('FEATURE_FIRST_PLAN_GUIDE', True)
+    FEATURE_NEXT_BEST_ACTIONS = _as_bool('FEATURE_NEXT_BEST_ACTIONS', True)
+    FEATURE_ACTIVATION_ANALYTICS = _as_bool('FEATURE_ACTIVATION_ANALYTICS', True)
 
 
 class DevelopmentConfig(Config):

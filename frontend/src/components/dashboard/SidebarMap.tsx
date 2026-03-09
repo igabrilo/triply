@@ -8,6 +8,7 @@ import Modal from '@components/ui/Modal';
 import Chip from '@components/ui/Chip';
 import type { Activity } from '@/types';
 import { useEffect } from 'react';
+import { buildActivityImage, buildFallbackImage } from '@/utils/mediaImages';
 
 import 'leaflet/dist/leaflet.css';
 
@@ -162,6 +163,7 @@ export default function SidebarMap() {
   const [activeCategory, setActiveCategory] = useState('All');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [imageErrorByActivityId, setImageErrorByActivityId] = useState<Record<string, boolean>>({});
 
   const allEntries = useMemo<MapActivityEntry[]>(() => {
     if (!currentTrip) return [];
@@ -202,6 +204,7 @@ export default function SidebarMap() {
     : null;
 
   if (!currentTrip || mappableEntries.length === 0) return null;
+  const destination = currentTrip.formData.destinations[0] || 'destination';
 
   const defaultCenter: [number, number] = [
     mappableEntries[0].activity.lat!,
@@ -310,6 +313,25 @@ export default function SidebarMap() {
                     >
                       <Popup>
                         <div className="map-popup">
+                          <img
+                            src={buildActivityImage(
+                              [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
+                              destination,
+                              activity.category || 'activity',
+                              480,
+                              260,
+                              `sidebar-map-popup-${currentTrip.id}-${activity.id}`,
+                            )}
+                            alt={activity.name}
+                            loading="lazy"
+                            style={{ width: '100%', height: 96, objectFit: 'cover', borderRadius: 8, marginBottom: 8, display: 'block' }}
+                            onError={(e) => {
+                              const img = e.currentTarget;
+                              if (img.dataset.fallback === '1') return;
+                              img.dataset.fallback = '1';
+                              img.src = buildFallbackImage(`sidebar-map-popup-${currentTrip.id}-${activity.id}`, 480, 260);
+                            }}
+                          />
                           <strong>{activity.name}</strong>
                           {activity.locationName && (
                             <p className="map-popup-location">{activity.locationName}</p>
@@ -406,14 +428,54 @@ export default function SidebarMap() {
                     style={{ cursor: hasCoords ? 'pointer' : 'default' }}
                   >
                     <div
-                      className="map-day-badge"
                       style={{
-                        background: `${meta.color}18`,
-                        color: meta.color,
-                        fontSize: 14,
+                        width: 40,
+                        height: 40,
+                        borderRadius: 10,
+                        overflow: 'hidden',
+                        border: `1px solid ${isActive ? `${meta.color}66` : 'var(--navy-100)'}`,
+                        background: 'var(--navy-50)',
+                        flexShrink: 0,
                       }}
                     >
-                      {meta.icon}
+                      {imageErrorByActivityId[activity.id] ? (
+                        <div
+                          className="map-day-badge"
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            background: `${meta.color}18`,
+                            color: meta.color,
+                            fontSize: 14,
+                            borderRadius: 0,
+                          }}
+                        >
+                          {meta.icon}
+                        </div>
+                      ) : (
+                        <img
+                          src={buildActivityImage(
+                            [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
+                            destination,
+                            activity.category || 'activity',
+                            320,
+                            240,
+                            `sidebar-map-${currentTrip.id}-${activity.id}`,
+                          )}
+                          alt={activity.name}
+                          loading="lazy"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          onError={(e) => {
+                            const img = e.currentTarget;
+                            if (img.dataset.fallback === '1') {
+                              setImageErrorByActivityId((prev) => ({ ...prev, [activity.id]: true }));
+                              return;
+                            }
+                            img.dataset.fallback = '1';
+                            img.src = buildFallbackImage(`sidebar-map-${currentTrip.id}-${activity.id}`, 320, 240);
+                          }}
+                        />
+                      )}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{

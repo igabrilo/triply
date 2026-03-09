@@ -1,15 +1,123 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { User, Mail, Settings, CreditCard, Download, Trash2, Crown, MapPin, Bell } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
+import { useTripStore } from '@/store/tripStore';
+import { analyticsAPI, tripAPI } from '@/services/api';
+import { emitGuideChanged, resetGuideState } from '@/utils/firstPlanGuide';
+import { featureFlags } from '@/config/featureFlags';
 import Button from '@components/ui/Button';
 import Chip from '@components/ui/Chip';
 
 const interestOptions = ['Museums', 'Food & Wine', 'Nature', 'Nightlife', 'Shopping', 'History', 'Art', 'Beach'];
 
+type ActivationDaily = {
+  date: string;
+  tripCreated: number;
+  firstUsefulPlan: number;
+};
+
+type ActivationMetrics = {
+  success: boolean;
+  windowDays: number;
+  tripCreated: number;
+  firstUsefulPlan: number;
+  conversionRatePct: number;
+  medianTimeToFirstUsefulPlanMinutes: number | null;
+  daily: ActivationDaily[];
+  definitions?: {
+    firstUsefulPlan?: string;
+    timeToFirstUsefulPlan?: string;
+  };
+};
+
+function shortDate(dateISO: string): string {
+  const d = new Date(dateISO);
+  if (Number.isNaN(d.getTime())) return dateISO;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function activationToCsv(metrics: ActivationMetrics): string {
+  const lines: string[] = [];
+  lines.push('date,trips_created,first_useful_plan');
+  for (const row of metrics.daily || []) {
+    lines.push(`${row.date},${Number(row.tripCreated || 0)},${Number(row.firstUsefulPlan || 0)}`);
+  }
+  lines.push('');
+  lines.push('window_days,trip_created,first_useful_plan,conversion_rate_pct,median_time_minutes');
+  lines.push(
+    [
+      metrics.windowDays,
+      metrics.tripCreated,
+      metrics.firstUsefulPlan,
+      metrics.conversionRatePct,
+      metrics.medianTimeToFirstUsefulPlanMinutes ?? '',
+    ].join(','),
+  );
+  return lines.join('\n');
+}
+
 export default function ProfileSection() {
   const { user } = useAuthStore();
+  const { currentTrip, setActiveTab } = useTripStore();
   const [activeSection, setActiveSection] = useState<'info' | 'preferences' | 'notifications' | 'subscription' | 'trips'>('info');
+  const [activation, setActivation] = useState<ActivationMetrics | null>(null);
+  const [loadingActivation, setLoadingActivation] = useState(false);
+  const [activationWindow, setActivationWindow] = useState<7 | 30 | 60>(30);
+  const isActivationEnabled = featureFlags.activationAnalytics;
+
+  useEffect(() => {
+    if (activeSection !== 'trips') return;
+    if (!isActivationEnabled) return;
+    let cancelled = false;
+    setLoadingActivation(true);
+    analyticsAPI.getActivationMetrics(activationWindow)
+      .then((res) => {
+        if (cancelled) return;
+        if (res?.success) {
+          setActivation(res as ActivationMetrics);
+        } else {
+          setActivation(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setActivation(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingActivation(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, activationWindow, isActivationEnabled]);
+
+  const dailyTail = useMemo(() => {
+    if (!activation?.daily?.length) return [];
+    return activation.daily.slice(-14);
+  }, [activation]);
+
+  const maxDailyValue = useMemo(() => {
+    if (!dailyTail.length) return 1;
+    return Math.max(
+      1,
+      ...dailyTail.map((row) => Math.max(Number(row.tripCreated || 0), Number(row.firstUsefulPlan || 0))),
+    );
+  }, [dailyTail]);
+
+  const conversionTrend = useMemo(() => {
+    if (!activation?.daily?.length) return null;
+    const last14 = activation.daily.slice(-14);
+    if (last14.length < 8) return null;
+    const prev = last14.slice(0, 7);
+    const curr = last14.slice(7);
+    const prevCreated = prev.reduce((sum, row) => sum + Number(row.tripCreated || 0), 0);
+    const currCreated = curr.reduce((sum, row) => sum + Number(row.tripCreated || 0), 0);
+    if (prevCreated === 0 || currCreated === 0) return null;
+    const prevRate = prev.reduce((sum, row) => sum + Number(row.firstUsefulPlan || 0), 0) / prevCreated;
+    const currRate = curr.reduce((sum, row) => sum + Number(row.firstUsefulPlan || 0), 0) / currCreated;
+    const deltaPct = (currRate - prevRate) * 100;
+    return Math.round(deltaPct * 100) / 100;
+  }, [activation]);
 
   const sections = [
     { id: 'info' as const, label: 'Account', icon: User },
@@ -81,6 +189,19 @@ export default function ProfileSection() {
             <input type="text" placeholder="e.g., ZAG" className="profile-input" style={{ maxWidth: 200 }} />
           </div>
           <Button size="sm">Save preferences</Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!currentTrip}
+            onClick={() => {
+              if (!currentTrip) return;
+              resetGuideState(currentTrip.id);
+              emitGuideChanged(currentTrip.id);
+              setActiveTab('overview');
+            }}
+          >
+            Restart first-plan guide
+          </Button>
           <p style={{ fontSize: 12, color: 'var(--navy-400)' }}>These preferences are opt-in. You can clear them at any time.</p>
         </motion.div>
       )}
@@ -126,6 +247,142 @@ export default function ProfileSection() {
 
       {activeSection === 'trips' && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {isActivationEnabled && (
+            <div className="item-card">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+              <div>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--navy-900)', margin: 0 }}>
+                  Activation snapshot
+                </h3>
+                <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--navy-500)' }}>
+                  Created trips vs first useful plans
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {[7, 30, 60].map((days) => (
+                  <button
+                    key={days}
+                    className={`btn btn-sm ${activationWindow === days ? 'btn-secondary' : 'btn-ghost'}`}
+                    onClick={() => setActivationWindow(days as 7 | 30 | 60)}
+                  >
+                    {days}d
+                  </button>
+                ))}
+                <button
+                  className="btn btn-ghost btn-sm"
+                  disabled={!activation}
+                  onClick={() => {
+                    if (!activation) return;
+                    const blob = new Blob([activationToCsv(activation)], { type: 'text/csv;charset=utf-8' });
+                    const url = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    const today = new Date().toISOString().slice(0, 10);
+                    link.href = url;
+                    link.download = `activation-${activation.windowDays}d-${today}.csv`;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    window.URL.revokeObjectURL(url);
+                    if (currentTrip) {
+                      tripAPI.trackUsageEvent(currentTrip.id, 'activation_csv_exported', {
+                        windowDays: activation.windowDays,
+                      }).catch(() => undefined);
+                    }
+                  }}
+                >
+                  <Download size={14} /> Export CSV
+                </button>
+              </div>
+            </div>
+            {loadingActivation ? (
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--navy-500)' }}>Loading metrics...</p>
+            ) : activation ? (
+              <div style={{ display: 'grid', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+                  <div>
+                    <p style={{ margin: 0, fontSize: 11, color: 'var(--navy-500)' }}>Trips created</p>
+                    <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--navy-900)' }}>{activation.tripCreated}</p>
+                  </div>
+                  <div>
+                    <p style={{ margin: 0, fontSize: 11, color: 'var(--navy-500)' }}>First useful plans</p>
+                    <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--navy-900)' }}>{activation.firstUsefulPlan}</p>
+                  </div>
+                  <div>
+                    <p style={{ margin: 0, fontSize: 11, color: 'var(--navy-500)' }}>Conversion</p>
+                    <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--navy-900)' }}>
+                      {activation.conversionRatePct}%
+                    </p>
+                  </div>
+                  <div>
+                    <p style={{ margin: 0, fontSize: 11, color: 'var(--navy-500)' }}>Median time</p>
+                    <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--navy-900)' }}>
+                      {activation.medianTimeToFirstUsefulPlanMinutes == null
+                        ? '-'
+                        : `${activation.medianTimeToFirstUsefulPlanMinutes} min`}
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ borderTop: '1px solid var(--navy-100)', paddingTop: 10 }}>
+                  <p style={{ margin: '0 0 6px', fontSize: 12, color: 'var(--navy-500)' }}>
+                    Funnel: first useful plans from created trips
+                  </p>
+                  <div style={{ background: 'var(--navy-100)', borderRadius: 8, height: 10, overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        width: `${Math.min(100, Math.max(0, activation.conversionRatePct))}%`,
+                        background: 'var(--primary-500)',
+                        height: '100%',
+                      }}
+                    />
+                  </div>
+                  {conversionTrend != null && (
+                    <p style={{ margin: '6px 0 0', fontSize: 11, color: conversionTrend >= 0 ? 'var(--success)' : 'var(--error)' }}>
+                      {conversionTrend >= 0 ? '+' : ''}{conversionTrend}% vs previous 7-day conversion rate
+                    </p>
+                  )}
+                </div>
+
+                {!!dailyTail.length && (
+                  <div style={{ borderTop: '1px solid var(--navy-100)', paddingTop: 10, display: 'grid', gap: 6 }}>
+                    <p style={{ margin: 0, fontSize: 12, color: 'var(--navy-500)' }}>
+                      Daily trend (created vs first useful)
+                    </p>
+                    {dailyTail.map((row) => {
+                      const createdW = Math.round((Number(row.tripCreated || 0) / maxDailyValue) * 100);
+                      const usefulW = Math.round((Number(row.firstUsefulPlan || 0) / maxDailyValue) * 100);
+                      return (
+                        <div key={row.date} style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 8, alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, color: 'var(--navy-500)' }}>{shortDate(row.date)}</span>
+                          <div style={{ display: 'grid', gap: 4 }}>
+                            <div style={{ height: 6, background: 'var(--navy-100)', borderRadius: 6, overflow: 'hidden' }}>
+                              <div style={{ width: `${createdW}%`, height: '100%', background: 'var(--navy-500)' }} />
+                            </div>
+                            <div style={{ height: 6, background: 'var(--navy-100)', borderRadius: 6, overflow: 'hidden' }}>
+                              <div style={{ width: `${usefulW}%`, height: '100%', background: 'var(--primary-500)' }} />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--navy-400)' }}>
+                      Gray = trips created, Blue = first useful plans.
+                    </p>
+                  </div>
+                )}
+
+                {activation.definitions?.firstUsefulPlan && (
+                  <p style={{ margin: 0, fontSize: 11, color: 'var(--navy-400)' }}>
+                    {activation.definitions.firstUsefulPlan}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--navy-500)' }}>Metrics unavailable right now.</p>
+            )}
+            </div>
+          )}
+
           <div className="item-card card-interactive">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>

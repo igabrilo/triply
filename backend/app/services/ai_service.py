@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+from urllib.parse import quote_plus
 from typing import Generator, Optional
 
 from flask import current_app
@@ -20,9 +21,13 @@ from pydantic import ValidationError
 
 from app.schemas.ai_schemas import (
     ChatEditResponse,
+    GeneratedActivities,
+    GeneratedBudget,
     GeneratedFlights,
+    GeneratedOverview,
     GeneratedPlan,
     GeneratedStays,
+    GeneratedWeather,
 )
 
 logger = logging.getLogger(__name__)
@@ -236,11 +241,155 @@ def generate_trip_sections(form_data: dict) -> Generator[tuple[str, object], Non
     """Generator that yields (section_name, parsed_data) as each section completes.
 
     Used by the SSE endpoint to stream progress to the frontend.
-    Yields: ('plan', GeneratedPlan), ('stays', GeneratedStays), ('flights', GeneratedFlights)
+    Yields generated sections progressively.
     """
     yield ('plan', generate_plan(form_data))
     yield ('stays', generate_stays(form_data))
     yield ('flights', generate_flights(form_data))
+    yield ('activities', generate_activities(form_data))
+    yield ('weather', generate_weather(form_data))
+    yield ('budget', generate_budget(form_data))
+    yield ('overview', generate_overview(form_data))
+
+
+def generate_activities(form_data: dict, extra_instruction: str | None = None) -> GeneratedActivities:
+    client = _get_client()
+    model = current_app.config.get('OPENAI_MODEL_GENERATION', 'gpt-5.2')
+
+    for attempt in range(1 + MAX_RETRIES):
+        try:
+            user_prompt = (
+                _build_trip_user_prompt(form_data)
+                + "\n\nReturn ONLY an activities suggestion bucket with 15-25 suggestions. "
+                "These are candidate activities users can manually add to specific days."
+            )
+            if extra_instruction:
+                user_prompt += f"\n\nAdditional instruction: {extra_instruction}"
+
+            resp = client.beta.chat.completions.parse(
+                model=model,
+                messages=[
+                    {"role": "system", "content": _build_trip_system_prompt()},
+                    {"role": "user", "content": user_prompt},
+                ],
+                response_format=GeneratedActivities,
+                temperature=0.7,
+            )
+            parsed = resp.choices[0].message.parsed
+            if parsed is None:
+                raise ValueError(f"Model refused or returned no content: {resp.choices[0].message.refusal}")
+            return parsed
+        except (ValidationError, Exception) as exc:
+            logger.warning("Activities generation attempt %d failed: %s", attempt + 1, exc)
+            if attempt == MAX_RETRIES:
+                raise
+    raise RuntimeError("Activities generation failed after retries")
+
+
+def generate_weather(form_data: dict, extra_instruction: str | None = None) -> GeneratedWeather:
+    client = _get_client()
+    model = current_app.config.get('OPENAI_MODEL_GENERATION', 'gpt-5.2')
+
+    for attempt in range(1 + MAX_RETRIES):
+        try:
+            user_prompt = (
+                _build_trip_user_prompt(form_data)
+                + "\n\nReturn ONLY a practical daily weather forecast for trip dates. "
+                "Weather is informational/read-only for users."
+            )
+            if extra_instruction:
+                user_prompt += f"\n\nAdditional instruction: {extra_instruction}"
+
+            resp = client.beta.chat.completions.parse(
+                model=model,
+                messages=[
+                    {"role": "system", "content": _build_trip_system_prompt()},
+                    {"role": "user", "content": user_prompt},
+                ],
+                response_format=GeneratedWeather,
+                temperature=0.4,
+            )
+            parsed = resp.choices[0].message.parsed
+            if parsed is None:
+                raise ValueError(f"Model refused or returned no content: {resp.choices[0].message.refusal}")
+            return parsed
+        except (ValidationError, Exception) as exc:
+            logger.warning("Weather generation attempt %d failed: %s", attempt + 1, exc)
+            if attempt == MAX_RETRIES:
+                raise
+    raise RuntimeError("Weather generation failed after retries")
+
+
+def generate_budget(form_data: dict, extra_instruction: str | None = None) -> GeneratedBudget:
+    client = _get_client()
+    model = current_app.config.get('OPENAI_MODEL_GENERATION', 'gpt-5.2')
+
+    for attempt in range(1 + MAX_RETRIES):
+        try:
+            user_prompt = (
+                _build_trip_user_prompt(form_data)
+                + "\n\nReturn ONLY budget category estimates for this trip."
+            )
+            if extra_instruction:
+                user_prompt += f"\n\nAdditional instruction: {extra_instruction}"
+
+            resp = client.beta.chat.completions.parse(
+                model=model,
+                messages=[
+                    {"role": "system", "content": _build_trip_system_prompt()},
+                    {"role": "user", "content": user_prompt},
+                ],
+                response_format=GeneratedBudget,
+                temperature=0.4,
+            )
+            parsed = resp.choices[0].message.parsed
+            if parsed is None:
+                raise ValueError(f"Model refused or returned no content: {resp.choices[0].message.refusal}")
+            return parsed
+        except (ValidationError, Exception) as exc:
+            logger.warning("Budget generation attempt %d failed: %s", attempt + 1, exc)
+            if attempt == MAX_RETRIES:
+                raise
+    raise RuntimeError("Budget generation failed after retries")
+
+
+def generate_overview(form_data: dict, extra_instruction: str | None = None) -> GeneratedOverview:
+    client = _get_client()
+    model = current_app.config.get('OPENAI_MODEL_GENERATION', 'gpt-5.2')
+
+    for attempt in range(1 + MAX_RETRIES):
+        try:
+            user_prompt = (
+                _build_trip_user_prompt(form_data)
+                + "\n\nReturn ONLY overview content: short summary, notes seed bullets, and a cinematic destination photo prompt."
+            )
+            if extra_instruction:
+                user_prompt += f"\n\nAdditional instruction: {extra_instruction}"
+
+            resp = client.beta.chat.completions.parse(
+                model=model,
+                messages=[
+                    {"role": "system", "content": _build_trip_system_prompt()},
+                    {"role": "user", "content": user_prompt},
+                ],
+                response_format=GeneratedOverview,
+                temperature=0.7,
+            )
+            parsed = resp.choices[0].message.parsed
+            if parsed is None:
+                raise ValueError(f"Model refused or returned no content: {resp.choices[0].message.refusal}")
+            return parsed
+        except (ValidationError, Exception) as exc:
+            logger.warning("Overview generation attempt %d failed: %s", attempt + 1, exc)
+            if attempt == MAX_RETRIES:
+                raise
+    raise RuntimeError("Overview generation failed after retries")
+
+
+def build_destination_image_url(prompt: str) -> str:
+    """Create a deterministic AI-image URL for frontend hero cards."""
+    safe_prompt = quote_plus(prompt.strip()) if prompt else "cinematic travel destination photo"
+    return f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1600&height=900&seed=triply"
 
 
 # ------------------------------------------------------------------

@@ -1,13 +1,29 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Star, MessageSquare, Ticket, MapPin, Clock } from 'lucide-react';
+import { Star, MessageSquare, Ticket, MapPin, Clock, Undo2 } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
 import { useChatStore } from '@/store/chatStore';
+import { useState } from 'react';
+import { buildActivityImage, buildFallbackImage } from '@/utils/mediaImages';
 
 export default function PlanSection() {
-  const { currentTrip, selectedDay, setSelectedDay, updateActivityStatus, updatedSections } = useTripStore();
+  const {
+    currentTrip,
+    selectedDay,
+    setSelectedDay,
+    setActiveTab,
+    updateActivityStatus,
+    addSuggestedActivityToDay,
+    returnPlanItemToBucket,
+    autofillDay,
+    updatedSections,
+  } = useTripStore();
   const { openChat } = useChatStore();
+  const [dropDay, setDropDay] = useState<number | null>(null);
+  const [autofillingDay, setAutofillingDay] = useState<number | null>(null);
+  const [imageErrorByActivityId, setImageErrorByActivityId] = useState<Record<string, boolean>>({});
 
   if (!currentTrip) return null;
+  const destination = currentTrip.formData.destinations[0] || 'destination';
 
   const plan = currentTrip.plan;
   const displayDays = selectedDay !== null ? plan.filter((d) => d.day === selectedDay) : plan;
@@ -64,6 +80,25 @@ export default function PlanSection() {
           transition={{ duration: 0.3 }}
           style={{ display: 'flex', flexDirection: 'column', gap: 32 }}
         >
+          {displayDays.length === 0 && (
+            <div className="item-card" style={{ textAlign: 'center', padding: '22px 18px' }}>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--navy-900)' }}>Your day-by-day plan is empty</p>
+              <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--navy-500)' }}>
+                Start by adding activities from AI suggestions.
+              </p>
+              <div style={{ marginTop: 12 }}>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    setSelectedDay(null);
+                    setActiveTab('activities');
+                  }}
+                >
+                  Add from Activities
+                </button>
+              </div>
+            </div>
+          )}
           {displayDays.map((day, index) => (
             <motion.div 
               key={day.day}
@@ -84,13 +119,73 @@ export default function PlanSection() {
                     {day.title.replace(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s*/i, '').replace(/^\d{4}-\d{2}-\d{2}\s*/, '').replace(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*/i, '') || day.title}
                   </span>
                 </div>
-                <button onClick={() => openChat({ section: 'plan', dayNumber: day.day })} className="day-edit-btn">Edit</button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    disabled={autofillingDay === day.day}
+                    onClick={async () => {
+                      setAutofillingDay(day.day);
+                      try {
+                        await autofillDay(day.day, 3);
+                      } finally {
+                        setAutofillingDay(null);
+                      }
+                    }}
+                  >
+                    {autofillingDay === day.day ? 'Autofilling...' : 'Autofill day'}
+                  </button>
+                  <button onClick={() => openChat({ section: 'plan', dayNumber: day.day })} className="day-edit-btn">Edit</button>
+                </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                  border: dropDay === day.day ? '1px dashed var(--primary-400)' : '1px dashed transparent',
+                  borderRadius: 12,
+                  padding: dropDay === day.day ? 8 : 0,
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDropDay(day.day);
+                }}
+                onDragLeave={() => setDropDay(null)}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  const activityId = e.dataTransfer.getData('text/activity-id');
+                  setDropDay(null);
+                  if (!activityId) return;
+                  await addSuggestedActivityToDay(activityId, day.day);
+                }}
+              >
+                {day.activities.length === 0 && (
+                  <div className="item-card" style={{ color: 'var(--navy-500)', fontSize: 13, display: 'grid', gap: 8 }}>
+                    <p style={{ margin: 0 }}>This day is empty. Add activities from the Activities tab.</p>
+                    <div>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => {
+                          setSelectedDay(day.day);
+                          setActiveTab('activities');
+                        }}
+                      >
+                        Add from Activities
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {dropDay === day.day && (
+                  <div className="item-card" style={{ color: 'var(--primary-700)', fontSize: 13, border: '1px dashed var(--primary-400)' }}>
+                    Drop activity here to add it to Day {day.day}.
+                  </div>
+                )}
                 {day.activities.map((activity, actIndex) => {
                   const mapLink = activity.links.find(l => l.type === 'map');
                   const ticketLink = activity.links.find(l => l.type === 'tickets' || l.type === 'other');
+                  const imageSeed = `plan-${currentTrip.id}-${activity.id}`;
+                  const imagePrompt = [activity.locationName, activity.name].filter(Boolean).join(', ') || activity.name;
 
                   return (
                     <motion.div
@@ -107,72 +202,124 @@ export default function PlanSection() {
                         transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
                       }}
                     >
-                      {/* Name + actions */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                        <h4 style={{ fontSize: 15, fontWeight: 700, color: 'var(--navy-950)', lineHeight: 1.35, margin: 0 }}>
-                          {activity.name}
-                        </h4>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: 12, flexShrink: 0 }}>
-                          <button
-                            onClick={() => updateActivityStatus(activity.id, activity.status === 'saved' ? 'planned' : 'saved')}
-                            className={`icon-btn ${activity.status === 'saved' ? 'icon-btn-star-active' : 'icon-btn-star'}`}
-                            title="Save"
-                            style={{ width: 28, height: 28 }}
-                          >
-                            <Star size={13} fill={activity.status === 'saved' ? 'currentColor' : 'none'} />
-                          </button>
-                          <button
-                            onClick={() => openChat({ section: 'plan', dayNumber: day.day, itemId: activity.id })}
-                            className="icon-btn icon-btn-chat"
-                            title="Edit in chat"
-                            style={{ width: 28, height: 28 }}
-                          >
-                            <MessageSquare size={13} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Description */}
-                      {activity.description && (
-                        <p style={{ fontSize: 13, color: 'var(--navy-500)', lineHeight: 1.55, margin: '0 0 10px' }}>
-                          {activity.description}
-                        </p>
-                      )}
-
-                      {/* Time + Duration */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                        {activity.timeOfDay && (
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 4,
-                            fontSize: 12, color: 'var(--primary-700)', background: 'var(--primary-50)',
-                            padding: '3px 10px', borderRadius: 20, fontWeight: 500,
-                          }}>
-                            <Clock size={11} />
-                            {activity.timeOfDay}
-                          </span>
-                        )}
-                        {activity.duration && (
-                          <span style={{ fontSize: 12, color: 'var(--navy-400)' }}>{activity.duration}</span>
-                        )}
-                      </div>
-
-                      {/* Tickets + Maps */}
-                      {(ticketLink || mapLink) && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, paddingTop: 10, borderTop: '1px solid var(--navy-50)' }}>
-                          {ticketLink && (
-                            <a href={ticketLink.url} target="_blank" rel="noopener noreferrer"
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--primary-600)', textDecoration: 'none' }}>
-                              <Ticket size={13} /> Tickets
-                            </a>
-                          )}
-                          {mapLink && (
-                            <a href={mapLink.url} target="_blank" rel="noopener noreferrer"
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--navy-600)', textDecoration: 'none' }}>
-                              <MapPin size={13} /> Maps
-                            </a>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                        <div
+                          style={{
+                            width: 118,
+                            height: 88,
+                            borderRadius: 10,
+                            overflow: 'hidden',
+                            border: '1px solid var(--navy-100)',
+                            background: 'var(--navy-50)',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {imageErrorByActivityId[activity.id] ? (
+                            <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center' }}>
+                              <MapPin size={18} style={{ color: 'var(--navy-400)' }} />
+                            </div>
+                          ) : (
+                            <img
+                              src={buildActivityImage(
+                                imagePrompt,
+                                destination,
+                                activity.category || 'activity',
+                                420,
+                                280,
+                                imageSeed,
+                              )}
+                              alt={activity.name}
+                              loading="lazy"
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                              onError={(e) => {
+                                const img = e.currentTarget;
+                                if (img.dataset.fallback === '1') {
+                                  setImageErrorByActivityId((prev) => ({ ...prev, [activity.id]: true }));
+                                  return;
+                                }
+                                img.dataset.fallback = '1';
+                                img.src = buildFallbackImage(imageSeed, 420, 280);
+                              }}
+                            />
                           )}
                         </div>
-                      )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          {/* Name + actions */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                            <h4 style={{ fontSize: 15, fontWeight: 700, color: 'var(--navy-950)', lineHeight: 1.35, margin: 0 }}>
+                              {activity.name}
+                            </h4>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: 12, flexShrink: 0 }}>
+                              <button
+                                onClick={() => returnPlanItemToBucket(activity.id)}
+                                className="icon-btn"
+                                title="Return to activities"
+                                style={{ width: 28, height: 28 }}
+                              >
+                                <Undo2 size={13} />
+                              </button>
+                              <button
+                                onClick={() => updateActivityStatus(activity.id, activity.status === 'saved' ? 'planned' : 'saved')}
+                                className={`icon-btn ${activity.status === 'saved' ? 'icon-btn-star-active' : 'icon-btn-star'}`}
+                                title="Save"
+                                style={{ width: 28, height: 28 }}
+                              >
+                                <Star size={13} fill={activity.status === 'saved' ? 'currentColor' : 'none'} />
+                              </button>
+                              <button
+                                onClick={() => openChat({ section: 'plan', dayNumber: day.day, itemId: activity.id })}
+                                className="icon-btn icon-btn-chat"
+                                title="Edit in chat"
+                                style={{ width: 28, height: 28 }}
+                              >
+                                <MessageSquare size={13} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Description */}
+                          {activity.description && (
+                            <p style={{ fontSize: 13, color: 'var(--navy-500)', lineHeight: 1.55, margin: '0 0 10px' }}>
+                              {activity.description}
+                            </p>
+                          )}
+
+                          {/* Time + Duration */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                            {activity.timeOfDay && (
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                fontSize: 12, color: 'var(--primary-700)', background: 'var(--primary-50)',
+                                padding: '3px 10px', borderRadius: 20, fontWeight: 500,
+                              }}>
+                                <Clock size={11} />
+                                {activity.timeOfDay}
+                              </span>
+                            )}
+                            {activity.duration && (
+                              <span style={{ fontSize: 12, color: 'var(--navy-400)' }}>{activity.duration}</span>
+                            )}
+                          </div>
+
+                          {/* Tickets + Maps */}
+                          {(ticketLink || mapLink) && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 16, paddingTop: 10, borderTop: '1px solid var(--navy-50)' }}>
+                              {ticketLink && (
+                                <a href={ticketLink.url} target="_blank" rel="noopener noreferrer"
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--primary-600)', textDecoration: 'none' }}>
+                                  <Ticket size={13} /> Tickets
+                                </a>
+                              )}
+                              {mapLink && (
+                                <a href={mapLink.url} target="_blank" rel="noopener noreferrer"
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--navy-600)', textDecoration: 'none' }}>
+                                  <MapPin size={13} /> Maps
+                                </a>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </motion.div>
                   );
                 })}

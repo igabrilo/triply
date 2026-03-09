@@ -4,9 +4,14 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Sparkles, Plane, Building2, MapPin, Check } from 'lucide-react';
 import Layout from '@components/layout/Layout';
 import DashboardHeader from '@components/dashboard/DashboardHeader';
+import FirstPlanGuide from '@components/dashboard/FirstPlanGuide';
+import OverviewSection from '@components/dashboard/OverviewSection';
 import PlanSection from '@components/dashboard/PlanSection';
+import ActivitiesSection from '@components/dashboard/ActivitiesSection';
 import FlightsSection from '@components/dashboard/FlightsSection';
 import StaysSection from '@components/dashboard/StaysSection';
+import BudgetSection from '@components/dashboard/BudgetSection';
+import WeatherSection from '@components/dashboard/WeatherSection';
 import MapSection from '@components/dashboard/MapSection';
 import ProfileSection from '@components/dashboard/ProfileSection';
 import QuickTweaks from '@components/dashboard/QuickTweaks';
@@ -14,12 +19,16 @@ import SavedItems from '@components/dashboard/SavedItems';
 import SidebarMap from '@components/dashboard/SidebarMap';
 import ChatPanel from '@components/chat/ChatPanel';
 import { useTripStore } from '@/store/tripStore';
+import { featureFlags } from '@/config/featureFlags';
 
 /* ─── Generation progress steps ─── */
 const generationSteps = [
   { key: 'plan', icon: MapPin, label: 'Building itinerary' },
   { key: 'stays', icon: Building2, label: 'Finding accommodation' },
   { key: 'flights', icon: Plane, label: 'Searching flights' },
+  { key: 'activities', icon: Sparkles, label: 'Generating activities' },
+  { key: 'weather', icon: Sparkles, label: 'Preparing weather' },
+  { key: 'overview', icon: Sparkles, label: 'Creating overview' },
 ];
 
 function GeneratingView() {
@@ -28,7 +37,17 @@ function GeneratingView() {
   const hasPlan = (currentTrip?.plan?.length ?? 0) > 0;
   const hasStays = (currentTrip?.stays?.length ?? 0) > 0;
   const hasFlights = (currentTrip?.flights?.length ?? 0) > 0;
-  const sectionDone: Record<string, boolean> = { plan: hasPlan, stays: hasStays, flights: hasFlights };
+  const hasActivities = (currentTrip?.activities?.length ?? 0) > 0;
+  const hasWeather = (currentTrip?.weather?.length ?? 0) > 0;
+  const hasOverview = !!currentTrip?.overview;
+  const sectionDone: Record<string, boolean> = {
+    plan: hasPlan,
+    stays: hasStays,
+    flights: hasFlights,
+    activities: hasActivities,
+    weather: hasWeather,
+    overview: hasOverview,
+  };
 
   const dest = currentTrip?.formData?.destinations?.[0] || 'your trip';
 
@@ -64,7 +83,10 @@ function GeneratingView() {
           const isActive = !done && (
             (step.key === 'plan' && !hasPlan) ||
             (step.key === 'stays' && hasPlan && !hasStays) ||
-            (step.key === 'flights' && hasPlan && hasStays && !hasFlights)
+            (step.key === 'flights' && hasPlan && hasStays && !hasFlights) ||
+            (step.key === 'activities' && hasPlan && hasStays && hasFlights && !hasActivities) ||
+            (step.key === 'weather' && hasPlan && hasStays && hasFlights && hasActivities && !hasWeather) ||
+            (step.key === 'overview' && hasPlan && hasStays && hasFlights && hasActivities && hasWeather && !hasOverview)
           );
 
           return (
@@ -153,7 +175,13 @@ export default function Dashboard() {
   if (!currentTrip) return null;
 
   const isStillGenerating = isGenerating || currentTrip.status === 'generating';
-  const hasContent = currentTrip.plan.length > 0 || currentTrip.flights.length > 0 || currentTrip.stays.length > 0;
+  const hasContent =
+    currentTrip.plan.length > 0 ||
+    currentTrip.flights.length > 0 ||
+    currentTrip.stays.length > 0 ||
+    currentTrip.activities.length > 0 ||
+    currentTrip.weather.length > 0 ||
+    !!currentTrip.overview;
 
   // Show generating view when generating and no content yet
   if (isStillGenerating && !hasContent) {
@@ -168,23 +196,28 @@ export default function Dashboard() {
 
   const renderSection = () => {
     switch (activeTab) {
+      case 'overview': return <OverviewSection />;
       case 'plan': return <PlanSection />;
+      case 'activities': return <ActivitiesSection />;
       case 'flights': return <FlightsSection />;
       case 'stays': return <StaysSection />;
+      case 'budget': return <BudgetSection />;
+      case 'weather': return <WeatherSection />;
       case 'map': return <MapSection />;
       case 'profile': return <ProfileSection />;
-      default: return <PlanSection />;
+      default: return <OverviewSection />;
     }
   };
 
-  const showSidebar = activeTab === 'plan' || activeTab === 'flights' || activeTab === 'stays';
+  const showSidebar = activeTab === 'plan' || activeTab === 'flights' || activeTab === 'stays' || activeTab === 'activities';
 
   return (
     <Layout showBlobs={false}>
-      <div className="page-container" style={{ paddingTop: 100, paddingBottom: 48 }}>
+      <div className="page-container dashboard-page-container" style={{ paddingTop: 100, paddingBottom: 48 }}>
         {/* Show a subtle generating banner if still generating but some content arrived */}
         {isStillGenerating && hasContent && (
           <motion.div
+            className="print-hide"
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             style={{
@@ -208,8 +241,9 @@ export default function Dashboard() {
         )}
 
         <DashboardHeader />
+        {featureFlags.firstPlanGuide && <FirstPlanGuide />}
 
-        <div style={{ display: 'flex', gap: 24, flexDirection: showSidebar ? 'row' : 'column' }}>
+        <div className="dashboard-main-wrap" style={{ display: 'flex', gap: 24, flexDirection: showSidebar ? 'row' : 'column' }}>
           {/* Main */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <AnimatePresence mode="wait">
@@ -221,7 +255,7 @@ export default function Dashboard() {
 
           {/* Sidebar */}
           {showSidebar && (
-            <div style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16 }} className="hide-mobile">
+            <div style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16 }} className="hide-mobile dashboard-sidebar print-hide">
               <QuickTweaks />
               <SidebarMap />
               <SavedItems />

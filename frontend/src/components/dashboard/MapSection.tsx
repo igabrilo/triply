@@ -3,10 +3,11 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { MapPin, Navigation, Maximize2, ExternalLink, LocateFixed, Loader, Map as MapIcon } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
-import { tripAPI } from '@/services/api';
+import { geocodeAPI, tripAPI } from '@/services/api';
 import Chip from '@components/ui/Chip';
 import Modal from '@components/ui/Modal';
-import type { Activity } from '@/types';
+import type { Activity, Stay } from '@/types';
+import { buildActivityImage, buildFallbackImage } from '@/utils/mediaImages';
 
 import 'leaflet/dist/leaflet.css';
 
@@ -124,22 +125,27 @@ interface MapActivityEntry {
   dayTitle: string;
 }
 
-function FitBounds({ entries }: { entries: MapActivityEntry[] }) {
+interface StaticMapPoint {
+  id: string;
+  lat: number;
+  lng: number;
+  type: 'airport-origin' | 'airport-destination' | 'stay';
+  label: string;
+  subtitle?: string;
+  mapsUrl?: string;
+}
+
+function FitBoundsPoints({ points }: { points: Array<[number, number]> }) {
   const map = useMap();
 
   useEffect(() => {
-    const points = entries
-      .filter((e) => e.activity.lat != null && e.activity.lng != null)
-      .map((e) => [e.activity.lat!, e.activity.lng!] as [number, number]);
-
     if (points.length === 0) return;
-
     if (points.length === 1) {
-      map.setView(points[0], 14, { animate: true });
+      map.setView(points[0], 13, { animate: true });
     } else {
       map.fitBounds(L.latLngBounds(points), { padding: [50, 50], animate: true });
     }
-  }, [entries, map]);
+  }, [points, map]);
 
   return null;
 }
@@ -182,7 +188,12 @@ export default function MapSection() {
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [airportPoints, setAirportPoints] = useState<StaticMapPoint[]>([]);
+  const [stayPoint, setStayPoint] = useState<StaticMapPoint | null>(null);
+  const [activityImageErrorById, setActivityImageErrorById] = useState<Record<string, boolean>>({});
   const markerRefs = useRef<Record<string, L.Marker>>({});
+  const airportCacheRef = useRef<Record<string, Omit<StaticMapPoint, 'id'>>>({});
+  const stayCacheRef = useRef<Record<string, Omit<StaticMapPoint, 'id'>>>({});
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
   const handleFindLocations = async () => {
@@ -221,6 +232,163 @@ export default function MapSection() {
     [filteredEntries]
   );
 
+  const primaryFlight = useMemo(() => {
+    if (!currentTrip) return null;
+    return (
+      currentTrip.flights.find((f) => f.id === currentTrip.selectedFlightId) ||
+      currentTrip.flights.find((f) => f.saved) ||
+      currentTrip.flights[0] ||
+      null
+    );
+  }, [currentTrip]);
+
+  const primaryStay = useMemo<Stay | null>(() => {
+    if (!currentTrip) return null;
+    return (
+      currentTrip.stays.find((s) => s.id === currentTrip.selectedStayId) ||
+      currentTrip.stays.find((s) => s.saved) ||
+      currentTrip.stays[0] ||
+      null
+    );
+  }, [currentTrip]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveAirports = async () => {
+      if (!primaryFlight) {
+        setAirportPoints([]);
+        return;
+      }
+
+      const requests = [
+        {
+          key: `${primaryFlight.departure || ''} airport`,
+          type: 'airport-origin' as const,
+          label: `Departure airport: ${primaryFlight.departure || 'Origin'}`,
+        },
+        {
+          key: `${primaryFlight.arrival || ''} airport`,
+          type: 'airport-destination' as const,
+          label: `Arrival airport: ${primaryFlight.arrival || 'Destination'}`,
+        },
+      ].filter((r) => r.key.trim().length > 0);
+
+      const resolved: StaticMapPoint[] = [];
+
+      for (const request of requests) {
+        const cacheKey = request.key.toLowerCase();
+        let point = airportCacheRef.current[cacheKey];
+        if (!point) {
+          try {
+            const res = await geocodeAPI.searchPlace(request.key);
+            const geo = res?.result;
+            if (geo?.lat != null && geo?.lng != null) {
+              point = {
+                lat: Number(geo.lat),
+                lng: Number(geo.lng),
+                type: request.type,
+                label: request.label,
+                subtitle: geo.location_name || geo.address || request.key,
+                mapsUrl: geo.maps_url || `https://www.google.com/maps/search/?api=1&query=${geo.lat},${geo.lng}`,
+              };
+              airportCacheRef.current[cacheKey] = point;
+            }
+          } catch {
+            // Keep map functional even if one geocode call fails.
+          }
+        }
+        if (point) {
+          resolved.push({ ...point, id: `${request.type}-${cacheKey}` });
+        }
+      }
+
+      if (!cancelled) {
+        setAirportPoints(resolved);
+      }
+    };
+
+    resolveAirports();
+    return () => {
+      cancelled = true;
+    };
+  }, [primaryFlight?.id, primaryFlight?.departure, primaryFlight?.arrival]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveStay = async () => {
+      if (!primaryStay) {
+        setStayPoint(null);
+        return;
+      }
+
+      if (primaryStay.lat != null && primaryStay.lng != null) {
+        const stayLat = Number(primaryStay.lat);
+        const stayLng = Number(primaryStay.lng);
+        setStayPoint({
+          id: `stay-${primaryStay.id}`,
+          lat: stayLat,
+          lng: stayLng,
+          type: 'stay',
+          label: primaryStay.name || 'Primary stay',
+          subtitle: primaryStay.neighborhood || primaryStay.type || '',
+          mapsUrl: `https://www.google.com/maps/search/?api=1&query=${stayLat},${stayLng}`,
+        });
+        return;
+      }
+
+      const destinationHint = currentTrip?.formData?.destinations?.[0] || '';
+      const query = [primaryStay.name, primaryStay.neighborhood, destinationHint]
+        .filter(Boolean)
+        .join(', ');
+      if (!query.trim()) {
+        setStayPoint(null);
+        return;
+      }
+
+      const cacheKey = query.toLowerCase();
+      let point = stayCacheRef.current[cacheKey];
+      if (!point) {
+        try {
+          const res = await geocodeAPI.searchPlace(query);
+          const geo = res?.result;
+          if (geo?.lat != null && geo?.lng != null) {
+            point = {
+              lat: Number(geo.lat),
+              lng: Number(geo.lng),
+              type: 'stay',
+              label: primaryStay.name || 'Primary stay',
+              subtitle: geo.location_name || geo.address || primaryStay.neighborhood || primaryStay.type || '',
+              mapsUrl: geo.maps_url || `https://www.google.com/maps/search/?api=1&query=${geo.lat},${geo.lng}`,
+            };
+            stayCacheRef.current[cacheKey] = point;
+          }
+        } catch {
+          // Keep map functional if stay geocoding fails.
+        }
+      }
+
+      if (!cancelled) {
+        setStayPoint(point ? { ...point, id: `stay-${primaryStay.id}` } : null);
+      }
+    };
+
+    resolveStay();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    primaryStay?.id,
+    primaryStay?.lat,
+    primaryStay?.lng,
+    primaryStay?.name,
+    primaryStay?.neighborhood,
+    primaryStay?.type,
+    primaryStay?.bookingUrl,
+    currentTrip?.formData?.destinations,
+  ]);
+
   // Map activity.id → 1-based step number within its day (stable regardless of filters)
   const stepNumbers = useMemo(() => {
     const map = new Map<string, number>();
@@ -237,11 +405,28 @@ export default function MapSection() {
     ? mappableEntries.find((e) => e.activity.id === focusedId)
     : null;
 
+  const staticPoints = useMemo(() => {
+    const points = [...airportPoints];
+    if (stayPoint) points.push(stayPoint);
+    return points;
+  }, [airportPoints, stayPoint]);
+
+  const allMapPoints = useMemo(() => {
+    const activityPoints = mappableEntries.map((entry) => ({
+      id: entry.activity.id,
+      lat: entry.activity.lat as number,
+      lng: entry.activity.lng as number,
+    }));
+    const extra = staticPoints.map((point) => ({ id: point.id, lat: point.lat, lng: point.lng }));
+    return [...activityPoints, ...extra];
+  }, [mappableEntries, staticPoints]);
+
   if (!currentTrip) return null;
+  const destination = currentTrip.formData.destinations[0] || 'destination';
 
   const defaultCenter: [number, number] =
-    mappableEntries.length > 0
-      ? [mappableEntries[0].activity.lat!, mappableEntries[0].activity.lng!]
+    allMapPoints.length > 0
+      ? [allMapPoints[0].lat, allMapPoints[0].lng]
       : [48.8566, 2.3522]; // Paris fallback
 
   const handleListItemClick = (entry: MapActivityEntry) => {
@@ -305,7 +490,7 @@ export default function MapSection() {
           </div>
 
           {/* Leaflet Map */}
-          {mappableEntries.length > 0 ? (
+          {allMapPoints.length > 0 ? (
             <div className="map-container">
               <MapContainer
                 center={defaultCenter}
@@ -319,7 +504,7 @@ export default function MapSection() {
                   maxZoom={20}
                 />
 
-                {!focusedEntry && <FitBounds entries={mappableEntries} />}
+                {!focusedEntry && <FitBoundsPoints points={allMapPoints.map((p) => [p.lat, p.lng] as [number, number])} />}
                 {focusedEntry && (
                   <FlyTo lat={focusedEntry.activity.lat!} lng={focusedEntry.activity.lng!} />
                 )}
@@ -347,6 +532,25 @@ export default function MapSection() {
                     >
                       <Popup>
                         <div className="map-popup">
+                          <img
+                            src={buildActivityImage(
+                              [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
+                              destination,
+                              activity.category || 'activity',
+                              480,
+                              260,
+                              `map-popup-${currentTrip.id}-${activity.id}`,
+                            )}
+                            alt={activity.name}
+                            loading="lazy"
+                            style={{ width: '100%', height: 96, objectFit: 'cover', borderRadius: 8, marginBottom: 8, display: 'block' }}
+                            onError={(e) => {
+                              const img = e.currentTarget;
+                              if (img.dataset.fallback === '1') return;
+                              img.dataset.fallback = '1';
+                              img.src = buildFallbackImage(`map-popup-${currentTrip.id}-${activity.id}`, 480, 260);
+                            }}
+                          />
                           <strong>{activity.name}</strong>
                           {activity.locationName && (
                             <p className="map-popup-location">{activity.locationName}</p>
@@ -379,6 +583,56 @@ export default function MapSection() {
                                   {link.label === 'Link' ? 'Website' : link.label}
                                 </a>
                               ))}
+                            </div>
+                          )}
+                        </div>
+                      </Popup>
+                    </Marker>
+                  );
+                })}
+
+                {staticPoints.map((point) => {
+                  const style =
+                    point.type === 'airport-origin'
+                      ? { color: '#0ea5e9', icon: '🛫' }
+                      : point.type === 'airport-destination'
+                      ? { color: '#f97316', icon: '🛬' }
+                      : { color: '#22c55e', icon: '🏨' };
+                  return (
+                    <Marker
+                      key={point.id}
+                      position={[point.lat, point.lng]}
+                      icon={createMarkerIcon(style.color, style.icon)}
+                    >
+                      <Popup>
+                        <div className="map-popup">
+                          <img
+                            src={buildActivityImage(
+                              [point.label, point.subtitle].filter(Boolean).join(', ') || point.label,
+                              destination,
+                              point.type === 'stay' ? 'stay' : 'transport',
+                              420,
+                              240,
+                              `map-static-${currentTrip.id}-${point.id}`,
+                            )}
+                            alt={point.label}
+                            loading="lazy"
+                            style={{ width: '100%', height: 88, objectFit: 'cover', borderRadius: 8, marginBottom: 8, display: 'block' }}
+                            onError={(e) => {
+                              const img = e.currentTarget;
+                              if (img.dataset.fallback === '1') return;
+                              img.dataset.fallback = '1';
+                              img.src = buildFallbackImage(`map-static-${currentTrip.id}-${point.id}`, 420, 240);
+                            }}
+                          />
+                          <strong>{point.label}</strong>
+                          {point.subtitle && <p className="map-popup-location">{point.subtitle}</p>}
+                          {point.mapsUrl && (
+                            <div className="map-popup-links">
+                              <a href={point.mapsUrl} target="_blank" rel="noopener noreferrer" className="map-popup-link map-popup-link-map">
+                                <MapIcon size={11} />
+                                Open in Maps
+                              </a>
                             </div>
                           )}
                         </div>
@@ -438,14 +692,54 @@ export default function MapSection() {
                   style={{ cursor: hasCoords ? 'pointer' : 'default' }}
                 >
                   <div
-                    className="map-day-badge"
                     style={{
-                      background: `${meta.color}18`,
-                      color: meta.color,
-                      fontSize: 14,
+                      width: 40,
+                      height: 40,
+                      borderRadius: 10,
+                      overflow: 'hidden',
+                      border: `1px solid ${isActive ? `${meta.color}66` : 'var(--navy-100)'}`,
+                      background: 'var(--navy-50)',
+                      flexShrink: 0,
                     }}
                   >
-                    {meta.icon}
+                    {activityImageErrorById[activity.id] ? (
+                      <div
+                        className="map-day-badge"
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          background: `${meta.color}18`,
+                          color: meta.color,
+                          fontSize: 14,
+                          borderRadius: 0,
+                        }}
+                      >
+                        {meta.icon}
+                      </div>
+                    ) : (
+                      <img
+                        src={buildActivityImage(
+                          [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
+                          destination,
+                          activity.category || 'activity',
+                          320,
+                          240,
+                          `map-list-${currentTrip.id}-${activity.id}`,
+                        )}
+                        alt={activity.name}
+                        loading="lazy"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        onError={(e) => {
+                          const img = e.currentTarget;
+                          if (img.dataset.fallback === '1') {
+                            setActivityImageErrorById((prev) => ({ ...prev, [activity.id]: true }));
+                            return;
+                          }
+                          img.dataset.fallback = '1';
+                          img.src = buildFallbackImage(`map-list-${currentTrip.id}-${activity.id}`, 320, 240);
+                        }}
+                      />
+                    )}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{
@@ -479,7 +773,7 @@ export default function MapSection() {
       <Modal isOpen={isExpanded} onClose={() => setIsExpanded(false)} title="Map" size="xl">
         <div className="map-expanded">
           <div className="map-expanded-map">
-            {isExpanded && mappableEntries.length > 0 && (
+            {isExpanded && allMapPoints.length > 0 && (
               <MapContainer
                 center={defaultCenter}
                 zoom={13}
@@ -492,7 +786,7 @@ export default function MapSection() {
                   maxZoom={20}
                 />
 
-                {!focusedEntry && <FitBounds entries={mappableEntries} />}
+                {!focusedEntry && <FitBoundsPoints points={allMapPoints.map((p) => [p.lat, p.lng] as [number, number])} />}
                 {focusedEntry && (
                   <FlyTo lat={focusedEntry.activity.lat!} lng={focusedEntry.activity.lng!} />
                 )}
@@ -517,6 +811,25 @@ export default function MapSection() {
                     >
                       <Popup>
                         <div className="map-popup">
+                          <img
+                            src={buildActivityImage(
+                              [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
+                              destination,
+                              activity.category || 'activity',
+                              480,
+                              260,
+                              `map-popup-${currentTrip.id}-${activity.id}`,
+                            )}
+                            alt={activity.name}
+                            loading="lazy"
+                            style={{ width: '100%', height: 96, objectFit: 'cover', borderRadius: 8, marginBottom: 8, display: 'block' }}
+                            onError={(e) => {
+                              const img = e.currentTarget;
+                              if (img.dataset.fallback === '1') return;
+                              img.dataset.fallback = '1';
+                              img.src = buildFallbackImage(`map-popup-${currentTrip.id}-${activity.id}`, 480, 260);
+                            }}
+                          />
                           <strong>{activity.name}</strong>
                           {activity.locationName && (
                             <p className="map-popup-location">{activity.locationName}</p>
@@ -549,6 +862,56 @@ export default function MapSection() {
                                   {link.label === 'Link' ? 'Website' : link.label}
                                 </a>
                               ))}
+                            </div>
+                          )}
+                        </div>
+                      </Popup>
+                    </Marker>
+                  );
+                })}
+
+                {staticPoints.map((point) => {
+                  const style =
+                    point.type === 'airport-origin'
+                      ? { color: '#0ea5e9', icon: '🛫' }
+                      : point.type === 'airport-destination'
+                      ? { color: '#f97316', icon: '🛬' }
+                      : { color: '#22c55e', icon: '🏨' };
+                  return (
+                    <Marker
+                      key={point.id}
+                      position={[point.lat, point.lng]}
+                      icon={createMarkerIcon(style.color, style.icon)}
+                    >
+                      <Popup>
+                        <div className="map-popup">
+                          <img
+                            src={buildActivityImage(
+                              [point.label, point.subtitle].filter(Boolean).join(', ') || point.label,
+                              destination,
+                              point.type === 'stay' ? 'stay' : 'transport',
+                              420,
+                              240,
+                              `map-static-${currentTrip.id}-${point.id}`,
+                            )}
+                            alt={point.label}
+                            loading="lazy"
+                            style={{ width: '100%', height: 88, objectFit: 'cover', borderRadius: 8, marginBottom: 8, display: 'block' }}
+                            onError={(e) => {
+                              const img = e.currentTarget;
+                              if (img.dataset.fallback === '1') return;
+                              img.dataset.fallback = '1';
+                              img.src = buildFallbackImage(`map-static-${currentTrip.id}-${point.id}`, 420, 240);
+                            }}
+                          />
+                          <strong>{point.label}</strong>
+                          {point.subtitle && <p className="map-popup-location">{point.subtitle}</p>}
+                          {point.mapsUrl && (
+                            <div className="map-popup-links">
+                              <a href={point.mapsUrl} target="_blank" rel="noopener noreferrer" className="map-popup-link map-popup-link-map">
+                                <MapIcon size={11} />
+                                Open in Maps
+                              </a>
                             </div>
                           )}
                         </div>
@@ -613,14 +976,54 @@ export default function MapSection() {
                     style={{ cursor: hasCoords ? 'pointer' : 'default' }}
                   >
                     <div
-                      className="map-day-badge"
                       style={{
-                        background: `${meta.color}18`,
-                        color: meta.color,
-                        fontSize: 14,
+                        width: 40,
+                        height: 40,
+                        borderRadius: 10,
+                        overflow: 'hidden',
+                        border: `1px solid ${isActive ? `${meta.color}66` : 'var(--navy-100)'}`,
+                        background: 'var(--navy-50)',
+                        flexShrink: 0,
                       }}
                     >
-                      {meta.icon}
+                      {activityImageErrorById[activity.id] ? (
+                        <div
+                          className="map-day-badge"
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            background: `${meta.color}18`,
+                            color: meta.color,
+                            fontSize: 14,
+                            borderRadius: 0,
+                          }}
+                        >
+                          {meta.icon}
+                        </div>
+                      ) : (
+                        <img
+                          src={buildActivityImage(
+                            [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
+                            destination,
+                            activity.category || 'activity',
+                            320,
+                            240,
+                            `map-list-${currentTrip.id}-${activity.id}`,
+                          )}
+                          alt={activity.name}
+                          loading="lazy"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          onError={(e) => {
+                            const img = e.currentTarget;
+                            if (img.dataset.fallback === '1') {
+                              setActivityImageErrorById((prev) => ({ ...prev, [activity.id]: true }));
+                              return;
+                            }
+                            img.dataset.fallback = '1';
+                            img.src = buildFallbackImage(`map-list-${currentTrip.id}-${activity.id}`, 320, 240);
+                          }}
+                        />
+                      )}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{
