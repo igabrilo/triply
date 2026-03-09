@@ -100,6 +100,46 @@ export interface SavedItem {
   referenceId: string;
 }
 
+/* ─── Weather ─── */
+export type TemperatureUnit = 'celsius' | 'fahrenheit';
+
+export interface WeatherHourly {
+  dt: number;
+  temp: number;
+  feelsLike: number;
+  humidity: number;
+  windSpeed: number;
+  windDeg: number;
+  pop: number;
+  weatherCode: number;
+  weatherMain: string;
+  weatherDesc: string;
+  icon: string;
+}
+
+export interface WeatherDay {
+  date: string;
+  dayOfWeek: string;
+  tempMin: number;
+  tempMax: number;
+  weatherCode: number;
+  weatherMain: string;
+  weatherDesc: string;
+  icon: string;
+  pop: number;
+  humidity: number;
+  windSpeed: number;
+  hourly: WeatherHourly[];
+}
+
+export interface WeatherData {
+  city: string;
+  lat: number;
+  lon: number;
+  days: WeatherDay[];
+  fetchedAt: number;
+}
+
 /* ─── Chat ─── */
 export interface ChatMessage {
   id: string;
@@ -126,4 +166,4 @@ export interface User {
 }
 
 /* ─── UI State ─── */
-export type TabId = 'plan' | 'flights' | 'stays' | 'map' | 'profile';
+export type TabId = 'plan' | 'flights' | 'stays' | 'weather' | 'map' | 'profile';
