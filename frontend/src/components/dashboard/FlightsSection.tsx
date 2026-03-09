@@ -7,6 +7,20 @@ import type { Flight } from '@/types';
 
 /* ─── Helpers ─── */
 
+function buildFlightsContext(flights: Flight[]): string {
+  return 'Flights:\n' + flights.map(f =>
+    `  - ${f.airline}: ${f.departure} → ${f.arrival}, ${f.departureTime}–${f.arrivalTime}, ${f.duration}, ${f.stops === 0 ? 'Direct' : f.stops + ' stop(s)'}, ${f.priceRange}`
+  ).join('\n');
+}
+
+function buildFlightContext(flight: Flight): string {
+  return `Flight: ${flight.airline}\nRoute: ${flight.departure} → ${flight.arrival}` +
+    `\nDeparture: ${flight.departureTime}\nArrival: ${flight.arrivalTime}` +
+    `\nDuration: ${flight.duration}` +
+    `\nStops: ${flight.stops === 0 ? 'Direct' : flight.stops + ' stop(s)'}` +
+    `\nPrice: ${flight.priceRange}`;
+}
+
 /** "$120 - $250" → "from $120" */
 function formatFromPrice(range: string): string {
   const m = range.match(/([\$€£])\s*(\d[\d,]*)/);
@@ -56,11 +70,11 @@ function extractClock(raw: string): string {
   // Vague labels from AI
   const lower = s.toLowerCase();
   if (lower.includes('early morning')) return '06:00';
-  if (lower.includes('morning'))       return '09:00';
+  if (lower.includes('morning')) return '09:00';
   if (lower.includes('noon') || lower.includes('midday')) return '12:00';
-  if (lower.includes('afternoon'))     return '14:00';
-  if (lower.includes('evening'))       return '19:00';
-  if (lower.includes('night'))         return '22:00';
+  if (lower.includes('afternoon')) return '14:00';
+  if (lower.includes('evening')) return '19:00';
+  if (lower.includes('night')) return '22:00';
   // Last resort — return the raw string (shouldn't happen)
   return s;
 }
@@ -106,7 +120,7 @@ export default function FlightsSection() {
             <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="badge badge-primary">Updated just now</motion.span>
           )}
         </div>
-        <button onClick={() => openChat({ section: 'flights' })} className="edit-chat-btn">
+        <button onClick={() => openChat({ section: 'flights', contextSummary: buildFlightsContext(currentTrip.flights) })} className="edit-chat-btn">
           <MessageSquare size={14} /> Edit in chat
         </button>
       </div>
@@ -161,14 +175,24 @@ export default function FlightsSection() {
                   {flight.stops === 0 ? 'Direct' : `${flight.stops} stop${flight.stops > 1 ? 's' : ''}`}
                 </span>
               </div>
-              <button
-                onClick={() => toggleFlightSaved(flight.id)}
-                className={`icon-btn ${flight.saved ? 'icon-btn-star-active' : 'icon-btn-star'}`}
-                title="Save flight"
-                style={{ width: 28, height: 28 }}
-              >
-                <Star size={13} fill={flight.saved ? 'currentColor' : 'none'} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <button
+                  onClick={() => toggleFlightSaved(flight.id)}
+                  className={`icon-btn ${flight.saved ? 'icon-btn-star-active' : 'icon-btn-star'}`}
+                  title="Save flight"
+                  style={{ width: 28, height: 28 }}
+                >
+                  <Star size={13} fill={flight.saved ? 'currentColor' : 'none'} />
+                </button>
+                <button
+                  onClick={() => openChat({ section: 'flights', itemId: flight.id, contextSummary: buildFlightContext(flight) })}
+                  className="icon-btn icon-btn-chat"
+                  title="Edit in chat"
+                  style={{ width: 28, height: 28 }}
+                >
+                  <MessageSquare size={13} />
+                </button>
+              </div>
             </div>
 
             {/* ── Ryanair-style route row ── */}

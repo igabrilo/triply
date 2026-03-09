@@ -2,6 +2,29 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Star, MessageSquare, Ticket, MapPin, Clock } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
 import { useChatStore } from '@/store/chatStore';
+import type { PlanDay, Activity } from '@/types';
+
+function buildPlanContext(plan: PlanDay[]): string {
+  return plan.map(d =>
+    `Day ${d.day}: ${d.title}\n` +
+    d.activities.map(a => `  - ${a.name} (${a.timeOfDay || 'TBD'}, ${a.duration || '?'})`).join('\n')
+  ).join('\n');
+}
+
+function buildDayContext(day: PlanDay): string {
+  return `Day ${day.day}: ${day.title}\nActivities:\n` +
+    day.activities.map(a =>
+      `  - ${a.name}${a.description ? ': ' + a.description : ''} (${a.timeOfDay || 'TBD'}, ${a.duration || '?'})`
+    ).join('\n');
+}
+
+function buildActivityContext(day: PlanDay, activity: Activity): string {
+  return `Day ${day.day}: ${day.title}\nActivity: ${activity.name}` +
+    (activity.description ? `\nDescription: ${activity.description}` : '') +
+    (activity.timeOfDay ? `\nTime: ${activity.timeOfDay}` : '') +
+    (activity.duration ? `\nDuration: ${activity.duration}` : '') +
+    (activity.category ? `\nCategory: ${activity.category}` : '');
+}
 
 export default function PlanSection() {
   const { currentTrip, selectedDay, setSelectedDay, updateActivityStatus, updatedSections } = useTripStore();
@@ -36,7 +59,7 @@ export default function PlanSection() {
           {wasUpdated && (
             <motion.span initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="badge badge-primary">Updated</motion.span>
           )}
-          <button onClick={() => openChat({ section: 'plan' })} className="edit-chat-btn">
+          <button onClick={() => openChat({ section: 'plan', contextSummary: buildPlanContext(plan) })} className="edit-chat-btn">
             <MessageSquare size={14} /> Edit in chat
           </button>
         </div>
@@ -65,7 +88,7 @@ export default function PlanSection() {
           style={{ display: 'flex', flexDirection: 'column', gap: 32 }}
         >
           {displayDays.map((day, index) => (
-            <motion.div 
+            <motion.div
               key={day.day}
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -84,7 +107,7 @@ export default function PlanSection() {
                     {day.title.replace(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s*/i, '').replace(/^\d{4}-\d{2}-\d{2}\s*/, '').replace(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*/i, '') || day.title}
                   </span>
                 </div>
-                <button onClick={() => openChat({ section: 'plan', dayNumber: day.day })} className="day-edit-btn">Edit</button>
+                <button onClick={() => openChat({ section: 'plan', dayNumber: day.day, contextSummary: buildDayContext(day) })} className="day-edit-btn">Edit</button>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -122,7 +145,7 @@ export default function PlanSection() {
                             <Star size={13} fill={activity.status === 'saved' ? 'currentColor' : 'none'} />
                           </button>
                           <button
-                            onClick={() => openChat({ section: 'plan', dayNumber: day.day, itemId: activity.id })}
+                            onClick={() => openChat({ section: 'plan', dayNumber: day.day, itemId: activity.id, contextSummary: buildActivityContext(day, activity) })}
                             className="icon-btn icon-btn-chat"
                             title="Edit in chat"
                             style={{ width: 28, height: 28 }}

@@ -153,6 +153,7 @@ export interface EditScope {
   section: 'flights' | 'stays' | 'plan';
   dayNumber?: number;
   itemId?: string;
+  contextSummary?: string;
 }
 
 /* ─── Auth ─── */
