@@ -30,6 +30,7 @@ function formatFromPrice(range: string): string {
   if (n) return `from $${n[1]}`;
   return range;
 }
+
 const sortOptions: { key: SortKey; label: string }[] = [
   { key: 'default', label: 'Recommended' },
   { key: 'departure', label: 'Departure' },
@@ -80,15 +81,6 @@ function extractClock(raw: string): string {
   // Last resort — return the raw string (shouldn't happen)
   return s;
 }
-
-type SortKey = 'default' | 'departure' | 'price' | 'fastest';
-
-const sortOptions: { key: SortKey; label: string }[] = [
-  { key: 'default', label: 'Recommended' },
-  { key: 'departure', label: 'Departure' },
-  { key: 'price', label: 'Price' },
-  { key: 'fastest', label: 'Fastest' },
-];
 
 function sortFlights(flights: Flight[], key: SortKey): Flight[] {
   if (key === 'default') return flights;
@@ -160,48 +152,6 @@ export default function FlightsSection() {
       </div>
 
       {/* Flight cards */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {sorted.map((flight, idx) => (
-          <motion.div
-            key={flight.id}
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.06 }}
-            style={{
-              padding: '18px 22px',
-              border: '1px solid var(--navy-100)',
-              borderRadius: 14,
-              background: 'var(--surface)',
-              transition: 'border-color 0.2s, box-shadow 0.2s',
-            }}
-          >
-            {/* Top row: Airline · Stops · Actions */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy-800)' }}>{flight.airline || 'Flight'}</span>
-                <span style={{ fontSize: 11, color: 'var(--navy-400)' }}>·</span>
-                <span style={{ fontSize: 12, color: 'var(--navy-500)' }}>
-                  {flight.stops === 0 ? 'Direct' : `${flight.stops} stop${flight.stops > 1 ? 's' : ''}`}
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <button
-                  onClick={() => toggleFlightSaved(flight.id)}
-                  className={`icon-btn ${flight.saved ? 'icon-btn-star-active' : 'icon-btn-star'}`}
-                  title="Save flight"
-                  style={{ width: 28, height: 28 }}
-                >
-                  <Star size={13} fill={flight.saved ? 'currentColor' : 'none'} />
-                </button>
-                <button
-                  onClick={() => openChat({ section: 'flights', itemId: flight.id, contextSummary: buildFlightContext(flight) })}
-                  className="icon-btn icon-btn-chat"
-                  title="Edit in chat"
-                  style={{ width: 28, height: 28 }}
-                >
-                  <MessageSquare size={13} />
-                </button>
-              </div>
       <div style={{ display: 'grid', gap: 10 }}>
         {sorted.length === 0 && (
           <div className="item-card" style={{ textAlign: 'center', padding: '22px 18px' }}>

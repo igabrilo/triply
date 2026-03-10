@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Star, MessageSquare, Ticket, MapPin, Clock, Undo2 } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
 import { useChatStore } from '@/store/chatStore';
+import { buildActivityImage, buildFallbackImage } from '@/utils/mediaImages';
 import type { PlanDay, Activity } from '@/types';
 
 function buildPlanContext(plan: PlanDay[]): string {
@@ -25,8 +27,6 @@ function buildActivityContext(day: PlanDay, activity: Activity): string {
     (activity.duration ? `\nDuration: ${activity.duration}` : '') +
     (activity.category ? `\nCategory: ${activity.category}` : '');
 }
-import { useState } from 'react';
-import { buildActivityImage, buildFallbackImage } from '@/utils/mediaImages';
 
 export default function PlanSection() {
   const {
@@ -213,28 +213,6 @@ export default function PlanSection() {
                         transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
                       }}
                     >
-                      {/* Name + actions */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                        <h4 style={{ fontSize: 15, fontWeight: 700, color: 'var(--navy-950)', lineHeight: 1.35, margin: 0 }}>
-                          {activity.name}
-                        </h4>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: 12, flexShrink: 0 }}>
-                          <button
-                            onClick={() => updateActivityStatus(activity.id, activity.status === 'saved' ? 'planned' : 'saved')}
-                            className={`icon-btn ${activity.status === 'saved' ? 'icon-btn-star-active' : 'icon-btn-star'}`}
-                            title="Save"
-                            style={{ width: 28, height: 28 }}
-                          >
-                            <Star size={13} fill={activity.status === 'saved' ? 'currentColor' : 'none'} />
-                          </button>
-                          <button
-                            onClick={() => openChat({ section: 'plan', dayNumber: day.day, itemId: activity.id, contextSummary: buildActivityContext(day, activity) })}
-                            className="icon-btn icon-btn-chat"
-                            title="Edit in chat"
-                            style={{ width: 28, height: 28 }}
-                          >
-                            <MessageSquare size={13} />
-                          </button>
                       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                         <div
                           style={{

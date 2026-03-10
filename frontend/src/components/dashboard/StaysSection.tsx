@@ -62,8 +62,6 @@ export default function StaysSection() {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button onClick={() => setShowFilters(!showFilters)} className="icon-btn"><SlidersHorizontal size={16} /></button>
-          <button onClick={() => openChat({ section: 'stays', contextSummary: buildStaysContext(currentTrip.stays) })} className="edit-chat-btn">
           <button onClick={() => setShowFilters(!showFilters)} className="icon-btn">
             <SlidersHorizontal size={16} />
           </button>
@@ -194,23 +192,6 @@ export default function StaysSection() {
                   <p className="stay-why">{stay.whyItFits}</p>
                 </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-                <p className="flight-price">{stay.priceRange}</p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <button onClick={() => toggleStaySaved(stay.id)} className={`icon-btn ${stay.saved ? 'icon-btn-star-active' : 'icon-btn-star'}`}>
-                    <Star size={16} fill={stay.saved ? 'currentColor' : 'none'} />
-                  </button>
-                  <button
-                    onClick={() => openChat({ section: 'stays', itemId: stay.id, contextSummary: buildStayContext(stay) })}
-                    className="icon-btn icon-btn-chat"
-                    title="Edit in chat"
-                    style={{ width: 28, height: 28 }}
-                  >
-                    <MessageSquare size={13} />
-                  </button>
-                  <a href={stay.bookingUrl} target="_blank" rel="noopener noreferrer" className="view-btn">
-                    View deal <ExternalLink size={12} />
-                  </a>
                 <div style={{ width: 320, maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
                     <p className="flight-price">{displayedPrice}</p>
