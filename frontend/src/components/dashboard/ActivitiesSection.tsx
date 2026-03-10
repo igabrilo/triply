@@ -188,7 +188,7 @@ export default function ActivitiesSection() {
                       </div>
                     ) : (
                       <img
-                        src={buildActivityImage(
+                        src={activity.cachedImageUrl || buildActivityImage(
                           activity.imageQuery || activity.placeQuery || activity.locationName || activity.title,
                           destination,
                           activity.category || 'activity',

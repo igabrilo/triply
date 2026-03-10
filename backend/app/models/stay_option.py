@@ -29,6 +29,7 @@ class StayOption(db.Model):
     why_it_fits = db.Column(db.Text, nullable=True)
     details = db.Column(db.JSON, nullable=True)
     saved = db.Column(db.Boolean, default=False)
+    cached_image_url = db.Column(db.Text, nullable=True)
 
     created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
@@ -56,6 +57,7 @@ class StayOption(db.Model):
             'whyItFits': self.why_it_fits,
             'details': self.details,
             'saved': self.saved,
+            'cachedImageUrl': self.cached_image_url,
         }
 
     def __repr__(self):

@@ -389,6 +389,17 @@ def stream_trip_generation(trip_id):
                 else form_data.get('destinations')
             ) or trip.destination or ''
             overview_payload['destination_image_url'] = _overview_place_photo_url(str(primary_destination))
+            try:
+                from app.services.geocoding_service import _resolve_and_cache_image
+                hero_cached = _resolve_and_cache_image(
+                    str(trip.id), 'overview', 'hero',
+                    f"{primary_destination} famous landmark",
+                    str(primary_destination),
+                )
+                if hero_cached:
+                    overview_payload['cached_image_url'] = hero_cached
+            except Exception:
+                pass
             TripService.persist_generated_section(trip, 'overview', overview_payload)
             yield _sse('section_ready', {
                 'section': 'overview',

@@ -35,6 +35,7 @@ class Config:
 
     # Supabase Auth (only URL needed — JWT verified via public JWKS endpoint)
     SUPABASE_URL = os.getenv('SUPABASE_URL', '')
+    SUPABASE_SERVICE_ROLE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY', '')
 
     # OpenAI
     OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')

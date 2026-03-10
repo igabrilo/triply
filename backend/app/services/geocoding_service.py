@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 import unicodedata
 from typing import Optional
 from urllib.parse import quote_plus
@@ -21,6 +22,9 @@ import requests
 from flask import current_app
 
 logger = logging.getLogger(__name__)
+
+# Nominatim allows max 1 request per second; throttle to avoid rate-limit HTML responses
+_nominatim_last_request: float = 0
 
 
 _DESTINATION_ALIAS_MAP: dict[str, str] = {
@@ -113,7 +117,7 @@ def _build_destination_hero_queries(destination: str) -> list[str]:
     return queries[:6]
 
 
-def _query_variants(query: str) -> list[str]:
+def _query_variants(query: str, destination: Optional[str] = None) -> list[str]:
     raw = (query or '').strip()
     if not raw:
         return []
@@ -129,6 +133,13 @@ def _query_variants(query: str) -> list[str]:
             v = f"{v[:-6]} Tokyo".strip()
         if all(existing.lower() != v.lower() for existing in variants):
             variants.append(v)
+
+    dest = (destination or '').strip()
+    dest_lower = dest.lower()
+
+    if dest and dest_lower not in raw.lower() and len(raw) < 60:
+        _add(f"{raw}, {dest}")
+        _add(f"{raw} {dest}")
 
     _add(raw)
     _add(raw.replace('Tokio', 'Tokyo').replace('tokio', 'tokyo'))
@@ -170,13 +181,16 @@ def _download_image_url(url: str):
     return None
 
 
-def _fetch_wikimedia_place_photo(query: str, max_width: int = 640):
+def _fetch_wikimedia_place_photo(query: str, max_width: int = 640, destination: Optional[str] = None):
     cleaned = (query or '').strip()
     if not cleaned:
         return None
-    # Reduce noisy address suffixes for better Wikipedia hit-rate.
     short_query = cleaned.split(',')[0].strip() or cleaned
-    candidates = [short_query]
+    dest = (destination or '').strip()
+    candidates: list[str] = []
+    if dest and dest.lower() not in short_query.lower():
+        candidates.append(f"{short_query} {dest}")
+    candidates.append(short_query)
     if ' city' not in short_query.lower():
         candidates.append(f"{short_query} city")
 
@@ -237,12 +251,14 @@ def _fetch_wikimedia_place_photo(query: str, max_width: int = 640):
     return None
 
 
-def _fetch_wikimedia_commons_photo(query: str, max_width: int = 640):
+def _fetch_wikimedia_commons_photo(query: str, max_width: int = 640, destination: Optional[str] = None):
     cleaned = (query or '').strip()
     if not cleaned:
         return None
 
-    short_query = cleaned.split(',')[0].strip() or cleaned
+    dest = (destination or '').strip()
+    base_short = cleaned.split(',')[0].strip() or cleaned
+    short_query = f"{base_short} {dest}" if dest and dest.lower() not in base_short.lower() else base_short
     headers = {'User-Agent': 'Triply/1.0 (travel-planner)'}
     thumb_size = max(180, min(int(max_width or 640), 1200))
 
@@ -362,6 +378,16 @@ def _google_textsearch_first_result_new(query: str, api_key: str) -> Optional[di
     return None
 
 
+def _extract_place_from_query(query: str) -> str:
+    """Extract place name from 'Label: PlaceName' format for better geocoding."""
+    raw = (query or '').strip()
+    if ':' in raw:
+        after_colon = raw.split(':', 1)[-1].strip()
+        if len(after_colon) > 3:
+            return after_colon
+    return raw
+
+
 def geocode_place(query: str) -> dict:
     """Resolve a place query into location data.
 
@@ -377,6 +403,7 @@ def geocode_place(query: str) -> dict:
         }
     """
     api_key = current_app.config.get('GOOGLE_MAPS_API_KEY', '')
+    query = _extract_place_from_query(query)
 
     result = {
         'lat': None,
@@ -424,29 +451,40 @@ def geocode_place(query: str) -> dict:
                 result['photo_query'] = display_name or query
                 result['maps_url'] = place_new.get('googleMapsUri') or _google_maps_search_url(query)
 
-    # Fallback: Nominatim (OpenStreetMap) – free, no API key required
+    # Fallback: Nominatim (OpenStreetMap) – free, max 1 req/sec
     if result['lat'] is None and query:
         try:
+            global _nominatim_last_request
+            elapsed = time.monotonic() - _nominatim_last_request
+            if elapsed < 1.0:
+                time.sleep(1.0 - elapsed)
+            _nominatim_last_request = time.monotonic()
+
             resp = requests.get(
                 'https://nominatim.openstreetmap.org/search',
                 params={'q': query, 'format': 'json', 'limit': 1},
                 headers={'User-Agent': 'Triply/1.0 (travel-planner)'},
                 timeout=5,
             )
-            places = resp.json()
-            if places:
-                place = places[0]
-                result['lat'] = float(place['lat'])
-                result['lng'] = float(place['lon'])
-                display = place.get('display_name', '')
-                result['location_name'] = display.split(',')[0].strip() if display else None
-                # Shorten Nominatim's verbose display_name to city + country
-                parts = [p.strip() for p in display.split(',')]
-                non_postal = [p for p in parts if not any(c.isdigit() for c in p)]
-                if len(non_postal) > 2:
-                    result['address'] = ', '.join(non_postal[-2:])
-                else:
-                    result['address'] = ', '.join(non_postal)
+            if resp.status_code != 200:
+                logger.debug("Nominatim returned %s for %r", resp.status_code, query)
+            elif 'application/json' not in (resp.headers.get('Content-Type') or ''):
+                logger.debug("Nominatim returned non-JSON for %r (likely rate-limited)", query)
+            else:
+                places = resp.json()
+                if places:
+                    place = places[0]
+                    result['lat'] = float(place['lat'])
+                    result['lng'] = float(place['lon'])
+                    display = place.get('display_name', '')
+                    result['location_name'] = display.split(',')[0].strip() if display else None
+                    # Shorten Nominatim's verbose display_name to city + country
+                    parts = [p.strip() for p in display.split(',')]
+                    non_postal = [p for p in parts if not any(c.isdigit() for c in p)]
+                    if len(non_postal) > 2:
+                        result['address'] = ', '.join(non_postal[-2:])
+                    else:
+                        result['address'] = ', '.join(non_postal)
         except Exception as exc:
             logger.warning("Nominatim geocoding failed for %r: %s", query, exc)
 
@@ -485,14 +523,22 @@ def reverse_geocode_city(lat: float, lng: float) -> Optional[str]:
         except Exception as exc:
             logger.warning("Reverse geocode failed for (%s, %s): %s", lat, lng, exc)
 
-    # Fallback: use free Nominatim (OpenStreetMap) reverse geocoding
+    # Fallback: use free Nominatim (OpenStreetMap) reverse geocoding, max 1 req/sec
     try:
+        global _nominatim_last_request
+        elapsed = time.monotonic() - _nominatim_last_request
+        if elapsed < 1.0:
+            time.sleep(1.0 - elapsed)
+        _nominatim_last_request = time.monotonic()
+
         resp = requests.get(
             'https://nominatim.openstreetmap.org/reverse',
             params={'lat': lat, 'lon': lng, 'format': 'json', 'zoom': 10},
             headers={'User-Agent': 'Triply/1.0'},
             timeout=5,
         )
+        if resp.status_code != 200 or 'application/json' not in (resp.headers.get('Content-Type') or ''):
+            return None
         data = resp.json()
         address = data.get('address', {})
         city = address.get('city') or address.get('town') or address.get('village') or address.get('municipality')
@@ -528,9 +574,88 @@ def enrich_plan_items(days_data: list[dict]) -> list[dict]:
     return days_data
 
 
-def enrich_stays(stays_data: list[dict]) -> list[dict]:
+def _resolve_and_cache_image(
+    trip_id: Optional[str],
+    item_type: str,
+    item_id: str,
+    query: str,
+    destination_hint: str = '',
+    place_id: Optional[str] = None,
+    photo_reference: Optional[str] = None,
+    photo_name: Optional[str] = None,
+) -> Optional[str]:
+    """Fetch a place photo and permanently cache it to Supabase Storage.
+
+    Returns the cached public URL, or None if caching is unavailable.
+    """
+    if not trip_id:
+        return None
+    photo = fetch_place_photo(
+        query,
+        max_width=640,
+        place_id=place_id,
+        photo_reference=photo_reference,
+        photo_name=photo_name,
+        allow_random_fallback=False,
+        destination_hint=destination_hint or None,
+    )
+    if not photo:
+        return None
+    image_bytes, content_type = photo
+    try:
+        from app.services.image_storage_service import upload_trip_image
+        return upload_trip_image(trip_id, item_type, item_id, image_bytes, content_type)
+    except Exception as exc:
+        logger.debug("Image cache upload failed for %s/%s/%s: %s", trip_id, item_type, item_id, exc)
+        return None
+
+
+def enrich_activities(activities_data: list[dict], destination_hint: str = '', trip_id: Optional[str] = None) -> list[dict]:
+    """Enrich activities with geocoded data and photo references (parallel to enrich_stays)."""
+    dest = (destination_hint or '').strip()
+    for activity in activities_data:
+        query = activity.get('place_query') or activity.get('title', '')
+        if not query:
+            continue
+        search_query = query
+        if dest and dest.lower() not in query.lower():
+            search_query = f"{query}, {dest}"
+        geo = geocode_place(search_query)
+        if geo.get('lat') is not None:
+            activity.setdefault('lat', geo['lat'])
+            activity.setdefault('lng', geo['lng'])
+        if geo.get('maps_url'):
+            activity.setdefault('maps_url', geo['maps_url'])
+        if geo.get('location_name'):
+            activity.setdefault('location_name', geo['location_name'])
+        if geo.get('address'):
+            activity.setdefault('address', geo['address'])
+        if geo.get('place_id'):
+            activity['place_id'] = geo['place_id']
+        if geo.get('photo_reference'):
+            activity['photo_reference'] = geo['photo_reference']
+        if geo.get('photo_name'):
+            activity['photo_name'] = geo['photo_name']
+        if geo.get('photo_query'):
+            activity['image_query'] = geo['photo_query']
+
+        act_id = activity.get('id', '')
+        if trip_id and act_id:
+            cached_url = _resolve_and_cache_image(
+                trip_id, 'activity', str(act_id), query, dest,
+                place_id=geo.get('place_id'),
+                photo_reference=geo.get('photo_reference'),
+                photo_name=geo.get('photo_name'),
+            )
+            if cached_url:
+                activity['cached_image_url'] = cached_url
+    return activities_data
+
+
+def enrich_stays(stays_data: list[dict], trip_id: Optional[str] = None, destination_hint: str = '') -> list[dict]:
     """Enrich stay options with geocoded lat/lng."""
-    for stay in stays_data:
+    dest = (destination_hint or '').strip()
+    for idx, stay in enumerate(stays_data):
         query = stay.get('place_query') or stay.get('name', '')
         if not query:
             continue
@@ -552,6 +677,17 @@ def enrich_stays(stays_data: list[dict]) -> list[dict]:
             stay['photo_name'] = geo['photo_name']
         if geo.get('photo_query'):
             stay['image_query'] = geo['photo_query']
+
+        if trip_id:
+            stay_id = stay.get('id') or f'stay_{idx}'
+            cached_url = _resolve_and_cache_image(
+                trip_id, 'stay', str(stay_id), query, dest,
+                place_id=geo.get('place_id'),
+                photo_reference=geo.get('photo_reference'),
+                photo_name=geo.get('photo_name'),
+            )
+            if cached_url:
+                stay['cached_image_url'] = cached_url
     return stays_data
 
 
@@ -655,12 +791,12 @@ def fetch_destination_hero_photo(
         if photo:
             return photo
 
-    # Last resort to avoid empty hero in very sparse destinations.
+    # Last resort – still no LoremFlickr for hero images; it returns generic photos.
     return fetch_place_photo(
         queries[0],
         max_width=max_width,
         max_height=max_height,
-        allow_random_fallback=True,
+        allow_random_fallback=False,
     )
 
 
@@ -672,6 +808,7 @@ def fetch_place_photo(
     photo_reference: Optional[str] = None,
     photo_name: Optional[str] = None,
     allow_random_fallback: bool = True,
+    destination_hint: Optional[str] = None,
 ):
     """Fetch a real place photo from Google Places Photo API.
 
@@ -681,7 +818,7 @@ def fetch_place_photo(
     if not (query or place_id or photo_reference or photo_name):
         return None
     api_key = current_app.config.get('GOOGLE_MAPS_API_KEY', '')
-    query_candidates = _query_variants(query or '')
+    query_candidates = _query_variants(query or '', destination=destination_hint)
 
     width = max(120, min(int(max_width or 640), 1600))
     height = max(120, min(int(max_height), 1600)) if max_height else None
@@ -726,12 +863,12 @@ def fetch_place_photo(
 
     if query_candidates:
         for candidate in query_candidates:
-            wiki_photo = _fetch_wikimedia_place_photo(candidate, max_width=width)
+            wiki_photo = _fetch_wikimedia_place_photo(candidate, max_width=width, destination=destination_hint)
             if wiki_photo:
                 return wiki_photo
 
         for candidate in query_candidates:
-            commons_photo = _fetch_wikimedia_commons_photo(candidate, max_width=width)
+            commons_photo = _fetch_wikimedia_commons_photo(candidate, max_width=width, destination=destination_hint)
             if commons_photo:
                 return commons_photo
 

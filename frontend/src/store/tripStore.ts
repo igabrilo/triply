@@ -1,4 +1,4 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { tripAPI } from '@/services/api';
 import type {
   TripFormData,
@@ -257,6 +257,7 @@ function transformStays(backendStays: any[], selectedStayId?: string | null): St
       reviewCount: 0,
       whyItFits: s.whyItFits || s.why_it_fits || details.whyItFits || details.why_it_fits || '',
       imageUrl: s.imageUrl || s.image_url || details.imageUrl || details.image_url || '',
+      cachedImageUrl: s.cachedImageUrl || s.cached_image_url || details.cachedImageUrl || details.cached_image_url || '',
       bookingUrl: s.deepLinkUrl || s.deep_link_url || details.bookingSearchUrl || details.booking_search_url || '#',
       amenities: details.amenities || s.amenities || [],
       saved: s.saved || false,
@@ -276,6 +277,7 @@ function transformActivities(backendActivities: any[]): SuggestedActivity[] {
     placeQuery: a.place_query || a.placeQuery || '',
     mapsUrl: a.maps_url || a.mapsUrl || '',
     imageQuery: a.image_query || a.imageQuery || '',
+    cachedImageUrl: a.cached_image_url || a.cachedImageUrl || '',
     locationName: a.location_name || a.locationName || '',
     address: a.address || '',
     lat: a.lat ?? null,
@@ -335,6 +337,7 @@ function transformOverview(backendOverview: any): OverviewData | null {
     summary: backendOverview.summary || '',
     destinationImagePrompt: backendOverview.destination_image_prompt || backendOverview.destinationImagePrompt || '',
     destinationImageUrl: backendOverview.destination_image_url || backendOverview.destinationImageUrl || '',
+    cachedImageUrl: backendOverview.cached_image_url || backendOverview.cachedImageUrl || '',
     notesSeed: backendOverview.notes_seed || backendOverview.notesSeed || [],
     notes: backendOverview.notes || '',
     travelDescription: backendOverview.travel_description || backendOverview.travelDescription || '',

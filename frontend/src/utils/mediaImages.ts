@@ -21,11 +21,13 @@ export function buildMapsSearchUrl(query: string): string {
   return `https://www.google.com/maps/search/?api=1&query=${safe}`;
 }
 
-export function buildPlacePhotoProxyUrl(query: string, width = 640, height?: number): string {
+export function buildPlacePhotoProxyUrl(query: string, width = 640, height?: number, destination?: string): string {
   const safeQuery = encodeURIComponent((query || '').trim());
   const clampedWidth = Math.max(120, Math.min(Math.round(width || 640), 1600));
   const heightPart = height ? `&h=${Math.max(120, Math.min(Math.round(height), 1600))}` : '';
-  return `/api/media/place-photo?q=${safeQuery}&w=${clampedWidth}${heightPart}`;
+  const dest = (destination || '').trim();
+  const destPart = dest ? `&destination=${encodeURIComponent(dest)}` : '';
+  return `/api/media/place-photo?q=${safeQuery}&w=${clampedWidth}${heightPart}${destPart}`;
 }
 
 export function buildStayPhotoProxyUrl(params: {
@@ -35,6 +37,7 @@ export function buildStayPhotoProxyUrl(params: {
   photoName?: string;
   width?: number;
   height?: number;
+  destination?: string;
 }): string {
   const clampedWidth = Math.max(120, Math.min(Math.round(params.width || 640), 1600));
   const search = new URLSearchParams();
@@ -46,12 +49,16 @@ export function buildStayPhotoProxyUrl(params: {
   if (params.photoReference) search.set('pref', params.photoReference);
   if (params.photoName) search.set('pname', params.photoName);
   if (params.query) search.set('q', params.query);
+  const dest = (params.destination || '').trim();
+  if (dest) search.set('destination', dest);
   return `/api/media/place-photo?${search.toString()}`;
 }
 
 export function buildPlaceImage(place: string, destination: string, width: number, height: number, _imageSeed: string): string {
-  const query = (place || destination || '').trim();
-  return buildPlacePhotoProxyUrl(query, width, height);
+  const p = (place || '').trim();
+  const d = (destination || '').trim();
+  const query = p || d;
+  return buildPlacePhotoProxyUrl(query, width, height, d);
 }
 
 export function buildActivityImage(
@@ -62,8 +69,10 @@ export function buildActivityImage(
   height: number,
   _imageSeed: string,
 ): string {
-  const query = (title || destination || '').trim();
-  return buildPlacePhotoProxyUrl(query, width, height);
+  const t = (title || '').trim();
+  const d = (destination || '').trim();
+  const query = t || d;
+  return buildPlacePhotoProxyUrl(query, width, height, d);
 }
 
 export function buildWeatherImage(

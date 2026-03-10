@@ -72,6 +72,7 @@ export interface Stay {
   reviewCount: number;
   whyItFits: string;
   imageUrl?: string;
+  cachedImageUrl?: string;
   bookingUrl: string;
   amenities: string[];
   saved: boolean;
@@ -141,6 +142,7 @@ export interface SuggestedActivity {
   placeQuery: string;
   mapsUrl?: string;
   imageQuery?: string;
+  cachedImageUrl?: string;
   locationName?: string;
   address?: string;
   lat?: number | null;
@@ -212,6 +214,7 @@ export interface OverviewData {
   summary: string;
   destinationImagePrompt: string;
   destinationImageUrl: string;
+  cachedImageUrl?: string;
   notesSeed: string[];
   notes?: string;
   travelDescription?: string;

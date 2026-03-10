@@ -292,10 +292,11 @@ export default function OverviewSection() {
   const fallbackPlaceImage = `/api/media/place-photo?q=${encodeURIComponent(destination)}&w=1600&h=900&norand=1`;
   const fallbackStaticImage = buildFallbackImage(`overview-${destination}`, 1600, 900);
   const storedCoverUrl = (overview?.destinationImageUrl || '').trim();
+  const cachedHeroUrl = (overview?.cachedImageUrl || '').trim();
   const isLegacyAiCover = isLegacyAutoOverviewImage(storedCoverUrl);
-  const coverImageUrl = storedCoverUrl && !isLegacyAiCover ? storedCoverUrl : destinationHeroImage;
+  const coverImageUrl = cachedHeroUrl || (storedCoverUrl && !isLegacyAiCover ? storedCoverUrl : destinationHeroImage);
   const firstWeather = currentTrip.weather[0] || null;
-  const stayThumbUrl = primaryStay?.imageUrl || buildPlaceImage(
+  const stayThumbUrl = primaryStay?.cachedImageUrl || primaryStay?.imageUrl || buildPlaceImage(
     `${primaryStay?.name || destination} ${primaryStay?.neighborhood || ''}`.trim(),
     destination,
     240,
@@ -304,6 +305,7 @@ export default function OverviewSection() {
   );
   const stayThumbPreferredUrl = primaryStay
     ? (
+      primaryStay.cachedImageUrl ||
       primaryStay.imageUrl ||
       buildStayPhotoProxyUrl({
         query: `${primaryStay.name || ''} ${destination} hotel`.trim(),
@@ -312,6 +314,7 @@ export default function OverviewSection() {
         photoName: primaryStay.photoName,
         width: 240,
         height: 180,
+        destination,
       })
     )
     : stayThumbUrl;

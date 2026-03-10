@@ -64,6 +64,7 @@ def place_photo():
       - w: max width (optional, default 640)
       - h: max height (optional)
       - norand: when 1/true, disables random fallback image sources
+      - destination: destination hint for disambiguation (optional)
     """
     query = (request.args.get('q') or '').strip()
     place_id = (request.args.get('pid') or '').strip()
@@ -75,6 +76,7 @@ def place_photo():
     max_width = request.args.get('w', default=640, type=int)
     max_height = request.args.get('h', type=int)
     disable_random = str(request.args.get('norand', '')).strip().lower() in {'1', 'true', 'yes'}
+    destination = (request.args.get('destination') or '').strip()
 
     from app.services.geocoding_service import fetch_place_photo
     photo = fetch_place_photo(
@@ -85,6 +87,7 @@ def place_photo():
         photo_reference=photo_reference or None,
         photo_name=photo_name or None,
         allow_random_fallback=not disable_random,
+        destination_hint=destination or None,
     )
     if not photo:
         return Response(status=404)

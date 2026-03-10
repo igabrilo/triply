@@ -2,6 +2,7 @@ import logging
 import uuid
 from copy import deepcopy
 from datetime import date, datetime, timezone
+from urllib.parse import quote_plus
 import hashlib
 import math
 import re
@@ -290,13 +291,31 @@ class TripService:
     # ------------------------------------------------------------------
     @staticmethod
     def persist_plan(trip: Trip, plan_data) -> None:
-        """Create plan days from AI output, but keep days empty by default."""
+        """Create plan days from AI output with all generated items."""
+        from app.services.geocoding_service import enrich_plan_items
 
         days_raw = [
             {
                 'dayIndex': d.day_index,
                 'title': d.title,
-                'items': [],
+                'items': [
+                    {
+                        'title': item.title,
+                        'description': item.description,
+                        'category': item.category,
+                        'time_block': item.time_block,
+                        'duration_minutes': item.duration_minutes,
+                        'cost_hint': item.cost_hint,
+                        'place_query': item.place_query,
+                        'external_url': item.external_url,
+                        'location_name': item.place_query,
+                        'maps_url': (
+                            f"https://www.google.com/maps/search/?api=1&query={quote_plus(item.place_query)}"
+                            if item.place_query else None
+                        ),
+                    }
+                    for item in d.items
+                ],
             }
             for d in plan_data.days
         ]
@@ -307,6 +326,7 @@ class TripService:
                 from datetime import timedelta
                 day_dict['date'] = (trip.start_date + timedelta(days=day_dict['dayIndex'])).isoformat()
 
+        enrich_plan_items(days_raw)
         _persist_days(trip, days_raw)
         db.session.commit()
 
@@ -316,7 +336,8 @@ class TripService:
         from app.services.geocoding_service import enrich_stays
 
         stays_raw = [s.model_dump() for s in stays_data.stays]
-        stays_raw = enrich_stays(stays_raw)
+        destination_hint = trip.destination or ''
+        stays_raw = enrich_stays(stays_raw, trip_id=str(trip.id), destination_hint=destination_hint)
 
         stays_formatted = []
         for s in stays_raw:
@@ -330,6 +351,7 @@ class TripService:
                 'lng': s.get('lng'),
                 'whyItFits': s.get('why_it_fits'),
                 'deepLinkUrl': s.get('booking_search_url'),
+                'cachedImageUrl': s.get('cached_image_url'),
                 'details': {
                     'stayType': s.get('stay_type'),
                     'priceRange': s.get('price_range'),
@@ -968,10 +990,15 @@ class TripService:
     # ------------------------------------------------------------------
     @staticmethod
     def delete_trip(trip_id: str, user_id: str) -> bool:
-        """Delete a trip and all children (cascade)."""
+        """Delete a trip and all children (cascade), including cached images."""
         trip = Trip.query.filter_by(id=trip_id, user_id=user_id).first()
         if not trip:
             return False
+        try:
+            from app.services.image_storage_service import delete_trip_images
+            delete_trip_images(str(trip.id))
+        except Exception:
+            logger.debug("Image cleanup skipped for trip %s", trip_id, exc_info=True)
         db.session.delete(trip)
         db.session.commit()
         return True
@@ -1029,6 +1056,10 @@ def _persist_flights(trip, flights_list):
 
 def _persist_stay_options(trip, stays_list):
     for s in stays_list:
+        details = s.get('details') or {}
+        cached_url = s.get('cachedImageUrl') or ''
+        if cached_url:
+            details['cachedImageUrl'] = cached_url
         db.session.add(StayOption(
             trip=trip,
             provider=s.get('provider'),
@@ -1041,7 +1072,8 @@ def _persist_stay_options(trip, stays_list):
             lat=s.get('lat'),
             lng=s.get('lng'),
             why_it_fits=s.get('whyItFits'),
-            details=s.get('details'),
+            details=details,
+            cached_image_url=cached_url or None,
         ))
 
 

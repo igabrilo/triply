@@ -103,6 +103,7 @@ export default function StaysSection() {
           const destination = normalizeDestinationName(currentTrip.formData.destinations[0] || stay.name || '');
           const stayQuery = `${stay.name || ''} ${destination} hotel`.trim();
           const stayPhotoUrl =
+            stay.cachedImageUrl ||
             stay.imageUrl ||
             buildStayPhotoProxyUrl({
               query: stayQuery,
@@ -111,6 +112,7 @@ export default function StaysSection() {
               photoName: stay.photoName,
               width: 240,
               height: 240,
+              destination,
             });
           const mapsUrl =
             stay.mapsUrl ||
