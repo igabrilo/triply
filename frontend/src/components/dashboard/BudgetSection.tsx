@@ -29,6 +29,8 @@ export default function BudgetSection() {
   const [editDate, setEditDate] = useState('');
   const [editNote, setEditNote] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
+  const [entryActionError, setEntryActionError] = useState('');
   const amountInputRef = useRef<HTMLInputElement | null>(null);
 
   if (!currentTrip) return null;
@@ -63,6 +65,23 @@ export default function BudgetSection() {
     ...Array.from(estimatedByCategory.keys()),
   ]));
 
+  const handleDeleteEntry = async (entryId: string) => {
+    const ok = window.confirm('Remove this expense from budget entries?');
+    if (!ok) return;
+    setEntryActionError('');
+    setDeletingEntryId(entryId);
+    try {
+      await deleteBudgetEntry(entryId);
+      if (editingEntryId === entryId) {
+        setEditingEntryId(null);
+      }
+    } catch (err: any) {
+      setEntryActionError(err?.response?.data?.message || 'Could not remove expense.');
+    } finally {
+      setDeletingEntryId(null);
+    }
+  };
+
   return (
     <div className="card" style={{ padding: 24 }}>
       <div className="section-header">
@@ -71,6 +90,59 @@ export default function BudgetSection() {
           <p style={{ fontSize: 13, color: 'var(--navy-500)', marginTop: 4 }}>
             AI estimates + manual actual spend tracking.
           </p>
+        </div>
+      </div>
+
+      <div className="item-card" style={{ marginBottom: 12 }}>
+        <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--navy-900)' }}>Add expense</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+          <select className="profile-input" value={category} onChange={(e) => setCategory(e.target.value)}>
+            {categories.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+          <input
+            className="profile-input"
+            type="number"
+            min="0"
+            step="0.01"
+            ref={amountInputRef}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="Amount"
+          />
+          <input
+            className="profile-input"
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+          <input
+            className="profile-input"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Note (optional)"
+          />
+        </div>
+        <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            disabled={saving}
+            onClick={async () => {
+              const parsedAmount = Number(amount);
+              if (!date || !parsedAmount || parsedAmount <= 0) return;
+              setSaving(true);
+              try {
+                await addBudgetEntry({ category, amount: parsedAmount, date, note });
+                setAmount('');
+                setNote('');
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            <Plus size={14} /> {saving ? 'Saving...' : 'Add expense'}
+          </button>
         </div>
       </div>
 
@@ -150,64 +222,14 @@ export default function BudgetSection() {
         </div>
       </div>
 
-      <div className="item-card" style={{ marginBottom: 12 }}>
-        <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--navy-900)' }}>Add expense</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
-          <select className="profile-input" value={category} onChange={(e) => setCategory(e.target.value)}>
-            {categories.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-          <input
-            className="profile-input"
-            type="number"
-            min="0"
-            step="0.01"
-            ref={amountInputRef}
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="Amount"
-          />
-          <input
-            className="profile-input"
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
-          <input
-            className="profile-input"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Note (optional)"
-          />
-        </div>
-        <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
-          <button
-            className="btn btn-ghost btn-sm"
-            disabled={saving}
-            onClick={async () => {
-              const parsedAmount = Number(amount);
-              if (!date || !parsedAmount || parsedAmount <= 0) return;
-              setSaving(true);
-              try {
-                await addBudgetEntry({ category, amount: parsedAmount, date, note });
-                setAmount('');
-                setNote('');
-              } finally {
-                setSaving(false);
-              }
-            }}
-          >
-            <Plus size={14} /> {saving ? 'Saving...' : 'Add expense'}
-          </button>
-        </div>
-      </div>
-
       <div className="item-card">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
           <PiggyBank size={16} style={{ color: 'var(--success-600)' }} />
           <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--navy-900)' }}>Actual entries</p>
         </div>
+        {entryActionError && (
+          <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--error)' }}>{entryActionError}</p>
+        )}
         {(budget?.entries?.length || 0) === 0 ? (
           <div style={{ textAlign: 'center', padding: '10px 6px' }}>
             <p style={{ margin: 0, fontSize: 12, color: 'var(--navy-500)' }}>No expenses added yet.</p>
@@ -255,6 +277,13 @@ export default function BudgetSection() {
                       />
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        disabled={savingEdit || deletingEntryId === entry.id}
+                        onClick={() => handleDeleteEntry(entry.id)}
+                      >
+                        <Trash2 size={14} /> {deletingEntryId === entry.id ? 'Removing...' : 'Remove expense'}
+                      </button>
                       <button
                         className="btn btn-ghost btn-sm"
                         onClick={() => setEditingEntryId(null)}
@@ -310,8 +339,13 @@ export default function BudgetSection() {
                       >
                         <Pencil size={14} />
                       </button>
-                      <button className="icon-btn" title="Delete entry" onClick={() => deleteBudgetEntry(entry.id)}>
-                        <Trash2 size={14} />
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        title="Delete entry"
+                        disabled={deletingEntryId === entry.id}
+                        onClick={() => handleDeleteEntry(entry.id)}
+                      >
+                        <Trash2 size={14} /> {deletingEntryId === entry.id ? 'Removing...' : 'Remove expense'}
                       </button>
                     </div>
                   </>

@@ -180,6 +180,11 @@ export const tripAPI = {
     return data;
   },
 
+  async updateOverviewDescription(tripId: string, description: string) {
+    const { data } = await apiClient.put(`/trips/${tripId}/overview/description`, { description });
+    return data;
+  },
+
   async trackUsageEvent(
     tripId: string,
     eventName: string,

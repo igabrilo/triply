@@ -162,10 +162,14 @@ def _build_overview_lines(trip) -> list[dict[str, Any]]:
         lines.append({'text': notes, 'size': 10, 'font': 'F1', 'gap_after': 6})
     else:
         lines.append({'text': 'No notes added.', 'size': 10, 'font': 'F1', 'gap_after': 6})
-    if notes_seed:
-        lines.append({'text': 'AI notes seed:', 'size': 10, 'font': 'F2', 'gap_after': 3})
-        for note in notes_seed[:8]:
-            lines.append({'text': f'- {_safe_text(note)}', 'size': 10, 'font': 'F1', 'gap_after': 1})
+    lines.append({'text': 'Personalized Expert Advice', 'size': 12, 'font': 'F2', 'gap_after': 5})
+    advice_rows = notes_seed[:8] if notes_seed else [
+        'Buy attraction tickets in advance for popular time slots.',
+        'Keep valuables secure in crowded transit hubs and tourist zones.',
+        'Group nearby activities on the same day to reduce travel time.',
+    ]
+    for idx, note in enumerate(advice_rows, start=1):
+        lines.append({'text': f'{idx}. {_safe_text(note)}', 'size': 10, 'font': 'F1', 'gap_after': 1})
 
     lines.append({'text': '', 'size': 10, 'font': 'F1', 'gap_after': 10})
     lines.append({'text': f'Generated on {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}', 'size': 9, 'font': 'F1', 'gap_after': 0})

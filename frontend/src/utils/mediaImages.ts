@@ -28,6 +28,27 @@ export function buildPlacePhotoProxyUrl(query: string, width = 640, height?: num
   return `/api/media/place-photo?q=${safeQuery}&w=${clampedWidth}${heightPart}`;
 }
 
+export function buildStayPhotoProxyUrl(params: {
+  query?: string;
+  placeId?: string;
+  photoReference?: string;
+  photoName?: string;
+  width?: number;
+  height?: number;
+}): string {
+  const clampedWidth = Math.max(120, Math.min(Math.round(params.width || 640), 1600));
+  const search = new URLSearchParams();
+  search.set('w', String(clampedWidth));
+  if (params.height) {
+    search.set('h', String(Math.max(120, Math.min(Math.round(params.height), 1600))));
+  }
+  if (params.placeId) search.set('pid', params.placeId);
+  if (params.photoReference) search.set('pref', params.photoReference);
+  if (params.photoName) search.set('pname', params.photoName);
+  if (params.query) search.set('q', params.query);
+  return `/api/media/place-photo?${search.toString()}`;
+}
+
 export function buildPlaceImage(place: string, destination: string, width: number, height: number, _imageSeed: string): string {
   const query = (place || destination || '').trim();
   return buildPlacePhotoProxyUrl(query, width, height);

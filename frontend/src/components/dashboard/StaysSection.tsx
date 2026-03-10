@@ -3,10 +3,19 @@ import { motion } from 'framer-motion';
 import { Check, ExternalLink, MapPin, MessageSquare, SlidersHorizontal, Star } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
 import { useChatStore } from '@/store/chatStore';
-import { buildFallbackImage, buildMapsSearchUrl, buildPlaceImage } from '@/utils/mediaImages';
+import { buildMapsSearchUrl, buildPlaceImage, buildStayPhotoProxyUrl } from '@/utils/mediaImages';
 import Chip from '@components/ui/Chip';
 
 const filterOptions = ['All', 'Budget', 'Mid-range', 'Family-friendly'];
+
+function normalizeDestinationName(value: string): string {
+  const raw = (value || '').trim();
+  if (!raw) return '';
+  const map: Record<string, string> = {
+    tokio: 'Tokyo',
+  };
+  return map[raw.toLowerCase()] || raw;
+}
 
 export default function StaysSection() {
   const { currentTrip, toggleStaySaved, selectPrimaryStay, updatedSections, focusStayId, setFocusStayId } = useTripStore();
@@ -76,6 +85,19 @@ export default function StaysSection() {
         )}
 
         {currentTrip.stays.map((stay, idx) => {
+          const displayedPrice = (stay.priceRange || '').trim() || 'Price on request';
+          const destination = normalizeDestinationName(currentTrip.formData.destinations[0] || stay.name || '');
+          const stayQuery = `${stay.name || ''} ${destination} hotel`.trim();
+          const stayPhotoUrl =
+            stay.imageUrl ||
+            buildStayPhotoProxyUrl({
+              query: stayQuery,
+              placeId: stay.placeId,
+              photoReference: stay.photoReference,
+              photoName: stay.photoName,
+              width: 240,
+              height: 240,
+            });
           const mapsUrl =
             stay.mapsUrl ||
             buildMapsSearchUrl(
@@ -116,13 +138,7 @@ export default function StaysSection() {
                         </div>
                       ) : (
                         <img
-                          src={buildPlaceImage(
-                            `${stay.name} ${stay.neighborhood}`.trim(),
-                            currentTrip.formData.destinations[0] || stay.name,
-                            240,
-                            240,
-                            `stay-${stay.id}`,
-                          )}
+                          src={stayPhotoUrl}
                           alt={stay.name}
                           loading="lazy"
                           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -133,7 +149,13 @@ export default function StaysSection() {
                               return;
                             }
                             img.dataset.fallback = '1';
-                            img.src = buildFallbackImage(`stay-${stay.id}`, 240, 240);
+                            img.src = buildPlaceImage(
+                              `${stay.name} ${stay.neighborhood}`.trim(),
+                              destination || stay.name,
+                              240,
+                              240,
+                              `stay-${stay.id}`,
+                            );
                           }}
                         />
                       )}
@@ -158,7 +180,7 @@ export default function StaysSection() {
 
                 <div style={{ width: 320, maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-                    <p className="flight-price">{stay.priceRange}</p>
+                    <p className="flight-price">{displayedPrice}</p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <button className={`btn btn-sm ${stay.isSelected ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => selectPrimaryStay(stay.id)}>
                         {stay.isSelected ? 'Selected' : 'Select primary'}

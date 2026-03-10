@@ -64,6 +64,9 @@ export interface Stay {
   lat?: number | null;
   lng?: number | null;
   mapsUrl?: string;
+  placeId?: string;
+  photoReference?: string;
+  photoName?: string;
   priceRange: string;
   rating: number;
   reviewCount: number;
@@ -175,6 +178,7 @@ export interface OverviewData {
   destinationImageUrl: string;
   notesSeed: string[];
   notes?: string;
+  travelDescription?: string;
 }
 
 /* ─── Chat ─── */

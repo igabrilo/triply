@@ -2,6 +2,10 @@ import logging
 import uuid
 from copy import deepcopy
 from datetime import date, datetime, timezone
+import hashlib
+import math
+import re
+import unicodedata
 
 from app import db
 from app.models.trip import Trip
@@ -15,6 +19,35 @@ from sqlalchemy.orm.attributes import flag_modified
 logger = logging.getLogger(__name__)
 
 
+_DESTINATION_COORD_FALLBACKS: dict[str, tuple[float, float]] = {
+    'tokyo': (35.6764, 139.6500),
+    'paris': (48.8566, 2.3522),
+    'rome': (41.9028, 12.4964),
+    'vienna': (48.2082, 16.3738),
+    'london': (51.5072, -0.1276),
+    'barcelona': (41.3874, 2.1686),
+    'amsterdam': (52.3676, 4.9041),
+    'budapest': (47.4979, 19.0402),
+    'prague': (50.0755, 14.4378),
+    'new york': (40.7128, -74.0060),
+    'berlin': (52.5200, 13.4050),
+    'munich': (48.1351, 11.5820),
+    'naples': (40.8518, 14.2681),
+}
+
+_DESTINATION_ALIAS_KEYS: dict[str, str] = {
+    'tokio': 'tokyo',
+    'bec': 'vienna',
+    'wien': 'vienna',
+    'rim': 'rome',
+    'pariz': 'paris',
+    'napulj': 'naples',
+    'munchen': 'munich',
+    'muenchen': 'munich',
+    'nyc': 'new york',
+}
+
+
 def _constraints_snapshot(trip: Trip) -> dict:
     base = trip.constraints if isinstance(trip.constraints, dict) else {}
     return deepcopy(base)
@@ -24,6 +57,162 @@ def _commit_constraints(trip: Trip, constraints: dict) -> None:
     trip.constraints = constraints
     flag_modified(trip, 'constraints')
     db.session.commit()
+
+
+def _dedupe_text_values(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        normalized = re.sub(r'\s+', ' ', str(raw or '').strip())
+        if not normalized:
+            continue
+        key = normalized.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(normalized)
+    return deduped
+
+
+def _match_text(value: str) -> str:
+    return re.sub(r'[^a-z0-9]+', ' ', str(value or '').lower()).strip()
+
+
+def _ascii_fold(value: str) -> str:
+    return unicodedata.normalize('NFKD', str(value or '')).encode('ascii', 'ignore').decode('ascii')
+
+
+def _destination_match_tokens(destination_hint: str) -> set[str]:
+    primary = re.sub(r'\s+', ' ', str(destination_hint or '').strip()).split(',', 1)[0].strip()
+    if not primary:
+        return set()
+    folded = _ascii_fold(primary).lower()
+    primary_match = _match_text(folded)
+    if not primary_match:
+        return set()
+    canonical = _DESTINATION_ALIAS_KEYS.get(primary_match, primary_match)
+    return {primary_match, canonical}
+
+
+def _geo_matches_destination(destination_hint: str, geo: dict, query: str) -> bool:
+    tokens = _destination_match_tokens(destination_hint)
+    if not tokens:
+        return True
+    geo_match_text = _match_text(f"{geo.get('location_name') or ''} {geo.get('address') or ''}")
+    query_match_text = _match_text(query)
+    for token in tokens:
+        if token and token in geo_match_text:
+            return True
+    # Allow plain destination query as final fallback.
+    for token in tokens:
+        if token and query_match_text == token:
+            return True
+    return False
+
+
+def _spread_fallback_coords(base_lat: float, base_lng: float, seed_text: str) -> tuple[float, float]:
+    seed = str(seed_text or 'activity').encode('utf-8', errors='ignore')
+    digest = hashlib.sha1(seed).hexdigest()
+    angle_ratio = int(digest[:8], 16) / float(0xFFFFFFFF)
+    radius_ratio = int(digest[8:16], 16) / float(0xFFFFFFFF)
+    angle = angle_ratio * 2 * math.pi
+    radius_deg = 0.002 + (radius_ratio * 0.010)  # ~0.2km to ~1.2km radial spread
+    lat_offset = radius_deg * math.cos(angle)
+    cos_lat = max(0.25, math.cos(math.radians(base_lat)))
+    lng_offset = (radius_deg * math.sin(angle)) / cos_lat
+    return round(base_lat + lat_offset, 6), round(base_lng + lng_offset, 6)
+
+
+def _destination_fallback_coords(destination_hint: str) -> tuple[float, float] | None:
+    tokens = _destination_match_tokens(destination_hint)
+    if not tokens:
+        return None
+    for token in tokens:
+        coords = _DESTINATION_COORD_FALLBACKS.get(token)
+        if coords:
+            return coords
+    return None
+
+
+def _build_activity_geocode_queries(activity: dict, destination_hint: str) -> list[str]:
+    base = _dedupe_text_values([
+        str(activity.get('place_query') or ''),
+        str(activity.get('location_name') or ''),
+        str(activity.get('address') or ''),
+        str(activity.get('title') or ''),
+    ])
+    destination = re.sub(r'\s+', ' ', str(destination_hint or '').strip())
+    if not destination:
+        return base
+
+    destination_lower = destination.lower()
+    combined: list[str] = []
+    for query in base:
+        if destination_lower in query.lower():
+            combined.append(query)
+        else:
+            combined.append(f"{query}, {destination}")
+    return _dedupe_text_values(combined + base + [destination])
+
+
+def _resolve_activity_geo_fields(activity: dict, destination_hint: str):
+    maps_url = activity.get('maps_url')
+    location_name = activity.get('location_name') or activity.get('place_query')
+    address = activity.get('address')
+    lat = activity.get('lat')
+    lng = activity.get('lng')
+
+    needs_geocoding = (
+        not maps_url
+        or lat is None
+        or lng is None
+        or not location_name
+        or not address
+    )
+    if not needs_geocoding:
+        return maps_url, location_name, address, lat, lng
+
+    try:
+        from app.services.geocoding_service import geocode_place
+    except Exception:
+        return maps_url, location_name, address, lat, lng
+
+    for query in _build_activity_geocode_queries(activity, destination_hint):
+        try:
+            geo = geocode_place(query)
+        except Exception:
+            continue
+        if not geo:
+            continue
+        if not _geo_matches_destination(destination_hint, geo, query):
+            continue
+        maps_url = maps_url or geo.get('maps_url')
+        location_name = location_name or geo.get('location_name')
+        address = address or geo.get('address')
+        if lat is None and geo.get('lat') is not None:
+            lat = geo.get('lat')
+        if lng is None and geo.get('lng') is not None:
+            lng = geo.get('lng')
+        if maps_url and location_name and address and lat is not None and lng is not None:
+            break
+
+    if (lat is None or lng is None) and destination_hint:
+        fallback = _destination_fallback_coords(destination_hint)
+        if fallback:
+            spread_seed = (
+                str(activity.get('id') or '')
+                or str(activity.get('place_query') or '')
+                or str(activity.get('title') or '')
+                or str(activity.get('location_name') or '')
+                or 'activity'
+            )
+            spread_lat, spread_lng = _spread_fallback_coords(fallback[0], fallback[1], spread_seed)
+            lat = spread_lat if lat is None else lat
+            lng = spread_lng if lng is None else lng
+            location_name = location_name or destination_hint
+            maps_url = maps_url or f"https://www.google.com/maps/search/?api=1&query={lat},{lng}"
+
+    return maps_url, location_name, address, lat, lng
 
 
 class TripService:
@@ -147,6 +336,9 @@ class TripService:
                     'amenities': s.get('amenities', []),
                     'mapsUrl': s.get('maps_url'),
                     'imageQuery': s.get('image_query'),
+                    'placeId': s.get('place_id'),
+                    'photoReference': s.get('photo_reference'),
+                    'photoName': s.get('photo_name'),
                     'locationName': s.get('location_name'),
                     'address': s.get('address'),
                 },
@@ -300,6 +492,19 @@ class TripService:
             overview = {}
 
         overview['destination_image_url'] = image_url or ''
+        ai_generated['overview'] = overview
+        constraints['aiGenerated'] = ai_generated
+        _commit_constraints(trip, constraints)
+
+    @staticmethod
+    def update_overview_description(trip: Trip, description: str) -> None:
+        constraints = _constraints_snapshot(trip)
+        ai_generated = constraints.get('aiGenerated', {})
+        overview = ai_generated.get('overview', {})
+        if not isinstance(overview, dict):
+            overview = {}
+
+        overview['travel_description'] = description or ''
         ai_generated['overview'] = overview
         constraints['aiGenerated'] = ai_generated
         _commit_constraints(trip, constraints)
@@ -507,32 +712,11 @@ class TripService:
         if not day:
             raise ValueError('Day not found')
 
-        query = (
-            activity.get('place_query')
-            or activity.get('location_name')
-            or activity.get('title')
-            or ''
+        destination_hint = str(trip.destination or '').strip()
+        maps_url, location_name, address, lat, lng = _resolve_activity_geo_fields(
+            activity,
+            destination_hint,
         )
-        maps_url = activity.get('maps_url')
-        location_name = activity.get('location_name') or activity.get('place_query')
-        address = activity.get('address')
-        lat = activity.get('lat')
-        lng = activity.get('lng')
-
-        if query and (not maps_url or lat is None or lng is None):
-            try:
-                from app.services.geocoding_service import geocode_place
-                geo = geocode_place(query)
-                maps_url = maps_url or geo.get('maps_url')
-                location_name = location_name or geo.get('location_name')
-                address = address or geo.get('address')
-                if lat is None and geo.get('lat') is not None:
-                    lat = geo.get('lat')
-                if lng is None and geo.get('lng') is not None:
-                    lng = geo.get('lng')
-            except Exception:
-                # Keep add-to-day resilient even if geocoding fails.
-                pass
 
         sort_order = len(day.plan_items)
         db.session.add(PlanItem(
@@ -568,42 +752,41 @@ class TripService:
         if not isinstance(activities, list) or not activities:
             raise ValueError('No generated activities available')
 
+        normalized: list[dict] = []
+        for idx, activity in enumerate(activities):
+            if not isinstance(activity, dict):
+                continue
+            activity_id = activity.get('id')
+            if not activity_id:
+                activity_id = f'act_{idx}'
+                activity['id'] = activity_id
+            normalized.append(activity)
+
+        candidates = [
+            activity
+            for activity in normalized
+            if str(activity.get('status') or 'suggested').strip().lower() != 'dismissed'
+        ]
+        if not candidates:
+            raise ValueError('No available activities in bucket for autofill')
+
         day = _resolve_trip_day(trip, day_number)
         if not day:
             raise ValueError('Day not found')
 
         take = max(1, min(int(limit), 6))
-        picked = activities[:take]
-        remaining = activities[take:]
+        picked = candidates[:take]
+        picked_ids = {str(activity.get('id')) for activity in picked}
+        remaining = [activity for activity in normalized if str(activity.get('id')) not in picked_ids]
 
         base_sort = len(day.plan_items)
         time_blocks = ['morning', 'afternoon', 'evening']
+        destination_hint = str(trip.destination or '').strip()
         for idx, activity in enumerate(picked):
-            query = (
-                activity.get('place_query')
-                or activity.get('location_name')
-                or activity.get('title')
-                or ''
+            maps_url, location_name, address, lat, lng = _resolve_activity_geo_fields(
+                activity,
+                destination_hint,
             )
-            maps_url = activity.get('maps_url')
-            location_name = activity.get('location_name') or activity.get('place_query')
-            address = activity.get('address')
-            lat = activity.get('lat')
-            lng = activity.get('lng')
-
-            if query and (not maps_url or lat is None or lng is None):
-                try:
-                    from app.services.geocoding_service import geocode_place
-                    geo = geocode_place(query)
-                    maps_url = maps_url or geo.get('maps_url')
-                    location_name = location_name or geo.get('location_name')
-                    address = address or geo.get('address')
-                    if lat is None and geo.get('lat') is not None:
-                        lat = geo.get('lat')
-                    if lng is None and geo.get('lng') is not None:
-                        lng = geo.get('lng')
-                except Exception:
-                    pass
 
             db.session.add(PlanItem(
                 trip_day=day,
@@ -749,6 +932,9 @@ class TripService:
                     'amenities': s.get('amenities', []),
                     'mapsUrl': s.get('maps_url'),
                     'imageQuery': s.get('image_query'),
+                    'placeId': s.get('place_id'),
+                    'photoReference': s.get('photo_reference'),
+                    'photoName': s.get('photo_name'),
                     'locationName': s.get('location_name'),
                     'address': s.get('address'),
                 },
@@ -862,17 +1048,13 @@ def _persist_stay_options(trip, stays_list):
 def _resolve_trip_day(trip: Trip, day_number: int) -> TripDay | None:
     """Resolve day by tolerant mapping.
 
-    Supports direct `day_index`, plus index-based fallback for trips where
-    AI day_index values are inconsistent (0/1-based or non-sequential).
+    Prioritizes user-facing ordinal day selection (Day 1..N), while still
+    supporting direct `day_index` and legacy 0-based inputs.
     """
     try:
         day_number = int(day_number)
     except (TypeError, ValueError):
         return None
-
-    direct = next((d for d in trip.days if d.day_index == day_number), None)
-    if direct:
-        return direct
 
     ordered_days = sorted(trip.days, key=lambda d: d.day_index)
     if not ordered_days:
@@ -885,6 +1067,10 @@ def _resolve_trip_day(trip: Trip, day_number: int) -> TripDay | None:
     # 0-based fallback by ordinal position
     if 0 <= day_number < len(ordered_days):
         return ordered_days[day_number]
+
+    direct = next((d for d in trip.days if d.day_index == day_number), None)
+    if direct:
+        return direct
 
     plus_one = next((d for d in trip.days if d.day_index == day_number + 1), None)
     if plus_one:

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, CloudSun, FileText, PiggyBank, Plane, Bed, RotateCcw, Upload, ImagePlus, Link2 } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
-import { buildFallbackImage, buildAirlineLogoUrl, buildPlaceImage, buildWeatherImage, buildPlacePhotoProxyUrl } from '@/utils/mediaImages';
+import { buildFallbackImage, buildAirlineLogoUrl, buildPlaceImage, buildWeatherImage, buildStayPhotoProxyUrl } from '@/utils/mediaImages';
 import SidebarMap from '@components/dashboard/SidebarMap';
 
 function fmtDate(dateStr?: string): string {
@@ -14,6 +14,178 @@ function fmtDate(dateStr?: string): string {
 function money(amount: number | null | undefined, currency: string): string {
   if (amount == null) return '-';
   return `${currency} ${amount.toFixed(2)}`;
+}
+
+function toIsoDate(input?: string): string {
+  if (!input) return '';
+  const date = new Date(input);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+}
+
+function nightsBetween(startDate?: string, endDate?: string): number {
+  if (!startDate || !endDate) return 0;
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
+  const dayMs = 24 * 60 * 60 * 1000;
+  return Math.max(0, Math.round((end.getTime() - start.getTime()) / dayMs));
+}
+
+function buildDefaultTravelDescription(params: {
+  destination: string;
+  startDate: string;
+  endDate: string;
+  travelers: number;
+  budget: string;
+  pace: 'relaxed' | 'balanced' | 'packed';
+  origin: string;
+}): string {
+  const destination = (params.destination || 'trip').trim();
+  const nights = nightsBetween(params.startDate, params.endDate);
+  const nightsLabel = nights > 0 ? `${nights}-night` : 'Multi-night';
+  const budgetLabelMap: Record<string, string> = {
+    budget: 'budget-friendly',
+    mid: 'mid-range',
+    premium: 'premium',
+    luxury: 'luxury',
+  };
+  const budgetLabel = budgetLabelMap[params.budget] || params.budget || 'balanced-budget';
+  const startIso = toIsoDate(params.startDate);
+  const endIso = toIsoDate(params.endDate);
+  const fromLabel = (params.origin || '').trim() || 'your origin';
+  const travelers = Math.max(1, Number(params.travelers) || 1);
+
+  let description = `${nightsLabel} ${budgetLabel}, ${params.pace}-pace ${destination} trip for ${travelers} from ${fromLabel}`;
+  if (startIso && endIso) {
+    description += ` (${startIso} to ${endIso}).`;
+  } else {
+    description += '.';
+  }
+
+  if (destination.toLowerCase().includes('tokyo')) {
+    description += ' Mix of classic neighborhoods (Asakusa, Shibuya, Shinjuku), low-cost food spots (depachika, ramen, conveyor sushi), one day trip option (Kamakura or Nikko), and smart transit planning with an IC card to keep costs down.';
+  }
+
+  return description;
+}
+
+function normalizeDestinationName(value: string): string {
+  const raw = (value || '').trim();
+  if (!raw) return '';
+  const map: Record<string, string> = {
+    tokio: 'Tokyo',
+  };
+  return map[raw.toLowerCase()] || raw;
+}
+
+function normalizeAdviceLine(value: string): string {
+  const cleaned = String(value || '')
+    .replace(/^\s*(?:[-*]|\d+[.)])\s*/, '')
+    .trim();
+  if (!cleaned) return '';
+  return /[.!?]$/.test(cleaned) ? cleaned : `${cleaned}.`;
+}
+
+function isLegacyAutoOverviewImage(url: string): boolean {
+  const value = (url || '').trim().toLowerCase();
+  if (!value) return false;
+  if (value.includes('image.pollinations.ai/prompt/')) return true;
+  if (!value.includes('/api/media/place-photo')) return false;
+
+  const legacyTokens = [
+    'skyline%20famous%20landmarks%20city%20travel',
+    'skyline+famous+landmarks+city+travel',
+    'famous%20landmarks%20city%20travel',
+    'famous+landmarks+city+travel',
+    'city%20landmark',
+    'city+landmark',
+  ];
+  return legacyTokens.some((token) => value.includes(token));
+}
+
+function buildPersonalizedExpertAdvice(params: {
+  destination: string;
+  travelers: number;
+  budget: string;
+  pace: 'relaxed' | 'balanced' | 'packed';
+  interests: string[];
+  origin: string;
+  firstWeather: { condition?: string; highTempC?: number | null; lowTempC?: number | null; humidityPct?: number | null } | null;
+  notesSeed: string[];
+}): string[] {
+  const {
+    destination,
+    travelers,
+    budget,
+    pace,
+    interests,
+    origin,
+    firstWeather,
+    notesSeed,
+  } = params;
+
+  const destinationName = (destination || 'your destination').trim();
+  const destLower = destinationName.toLowerCase();
+  const tips: string[] = [];
+
+  if (destLower.includes('tokyo') || destLower.includes('japan')) {
+    tips.push('Buy timed-entry tickets for top spots in advance (teamLab, Skytree, major museums), especially for weekends.');
+    tips.push('Load a Suica/PASMO card on day one to move quickly between neighborhoods and avoid queueing for individual tickets.');
+  } else {
+    tips.push(`Buy tickets for major attractions in ${destinationName} in advance to avoid sold-out slots and long queues.`);
+  }
+
+  tips.push(`Keep valuables in front pockets or zipped bags in busy transit hubs and tourist areas around ${destinationName}.`);
+
+  if (pace === 'packed') {
+    tips.push('Cluster activities by neighborhood each day to reduce transit time and keep your packed schedule realistic.');
+  } else if (pace === 'relaxed') {
+    tips.push('Leave buffer time between activities so you can explore local streets and cafes without rushing.');
+  }
+
+  if (budget === 'budget') {
+    tips.push('Set a daily spending cap and use lunch specials or convenience-store meals to keep costs under control.');
+  } else if (budget === 'luxury' || budget === 'premium') {
+    tips.push('Reserve premium dining and signature experiences early, because high-demand slots fill fast.');
+  }
+
+  if (travelers > 1) {
+    tips.push(`Book group tables and transport for ${travelers} travelers in advance to avoid split seating.`);
+  }
+
+  if (firstWeather?.condition) {
+    const weatherBits: string[] = [];
+    if (firstWeather.highTempC != null) weatherBits.push(`high around ${firstWeather.highTempC}C`);
+    if (firstWeather.lowTempC != null) weatherBits.push(`low near ${firstWeather.lowTempC}C`);
+    if (firstWeather.humidityPct != null) weatherBits.push(`humidity about ${firstWeather.humidityPct}%`);
+    const weatherTail = weatherBits.length > 0 ? ` (${weatherBits.join(', ')})` : '';
+    tips.push(`Pack for ${firstWeather.condition.toLowerCase()}${weatherTail} and keep a compact rain/wind layer with you.`);
+  }
+
+  if (interests.length > 0) {
+    const topInterests = interests.slice(0, 2).join(' and ');
+    tips.push(`Prioritize bookings that match your interests in ${topInterests} early in the trip so backup options remain available.`);
+  }
+
+  if (origin.trim()) {
+    tips.push(`Check departure logistics from ${origin.trim()} at least 24 hours before flying to avoid last-minute transfer issues.`);
+  }
+
+  for (const note of notesSeed || []) {
+    const normalized = normalizeAdviceLine(note);
+    if (normalized) tips.push(normalized);
+  }
+
+  const deduped: string[] = [];
+  const seen = new Set<string>();
+  for (const tip of tips) {
+    const key = tip.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(tip);
+  }
+  return deduped.slice(0, 6);
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -60,14 +232,18 @@ export default function OverviewSection() {
     currentTrip,
     saveTripNotes,
     saveOverviewImage,
+    saveOverviewDescription,
     setActiveTab,
     setSelectedDay,
     setFocusFlightId,
     setFocusStayId,
   } = useTripStore();
   const [notes, setNotes] = useState('');
+  const [travelDescription, setTravelDescription] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
+  const [savingTravelDescription, setSavingTravelDescription] = useState(false);
   const [savingImage, setSavingImage] = useState(false);
+  const [travelDescriptionError, setTravelDescriptionError] = useState('');
   const [imageError, setImageError] = useState('');
   const [imageMenuOpen, setImageMenuOpen] = useState(false);
   const [coverImageSrc, setCoverImageSrc] = useState('');
@@ -84,9 +260,18 @@ export default function OverviewSection() {
 
   if (!currentTrip) return null;
 
-  const destination = currentTrip.formData.destinations[0] || 'Trip';
+  const destination = normalizeDestinationName(currentTrip.formData.destinations[0] || 'Trip');
   const dateRange = `${fmtDate(currentTrip.formData.startDate)} -> ${fmtDate(currentTrip.formData.endDate)}`;
   const travelersLabel = `${currentTrip.formData.travelers} traveler${currentTrip.formData.travelers > 1 ? 's' : ''}`;
+  const generatedTravelDescription = buildDefaultTravelDescription({
+    destination,
+    startDate: currentTrip.formData.startDate,
+    endDate: currentTrip.formData.endDate,
+    travelers: currentTrip.formData.travelers,
+    budget: currentTrip.formData.budget,
+    pace: currentTrip.formData.preferences.pace,
+    origin: currentTrip.formData.origin || '',
+  });
 
   const primaryFlight =
     currentTrip.flights.find((f) => f.id === currentTrip.selectedFlightId) ||
@@ -98,14 +283,17 @@ export default function OverviewSection() {
     currentTrip.stays.find((s) => s.saved) ||
     currentTrip.stays[0] ||
     null;
+  const primaryStayPrice = (primaryStay?.priceRange || '').trim() || 'Price on request';
 
   const budgetSummary = currentTrip.budget?.summary;
   const budgetCurrency = budgetSummary?.currency || currentTrip.budget?.currency || 'EUR';
-  const destinationPlaceImage = buildPlacePhotoProxyUrl(destination, 1600, 900);
+  const destinationHeroImage = `/api/media/overview-hero?destination=${encodeURIComponent(destination)}&w=1600&h=900`;
+  const destinationPlaceImage = `/api/media/place-photo?q=${encodeURIComponent(`${destination} famous landmark`)}&w=1600&h=900&norand=1`;
+  const fallbackPlaceImage = `/api/media/place-photo?q=${encodeURIComponent(destination)}&w=1600&h=900&norand=1`;
   const fallbackStaticImage = buildFallbackImage(`overview-${destination}`, 1600, 900);
   const storedCoverUrl = (overview?.destinationImageUrl || '').trim();
-  const isLegacyAiCover = storedCoverUrl.includes('image.pollinations.ai/prompt/');
-  const coverImageUrl = storedCoverUrl && !isLegacyAiCover ? storedCoverUrl : destinationPlaceImage;
+  const isLegacyAiCover = isLegacyAutoOverviewImage(storedCoverUrl);
+  const coverImageUrl = storedCoverUrl && !isLegacyAiCover ? storedCoverUrl : destinationHeroImage;
   const firstWeather = currentTrip.weather[0] || null;
   const stayThumbUrl = primaryStay?.imageUrl || buildPlaceImage(
     `${primaryStay?.name || destination} ${primaryStay?.neighborhood || ''}`.trim(),
@@ -114,6 +302,19 @@ export default function OverviewSection() {
     180,
     `overview-stay-${currentTrip.id}-${primaryStay?.id || 'none'}`,
   );
+  const stayThumbPreferredUrl = primaryStay
+    ? (
+      primaryStay.imageUrl ||
+      buildStayPhotoProxyUrl({
+        query: `${primaryStay.name || ''} ${destination} hotel`.trim(),
+        placeId: primaryStay.placeId,
+        photoReference: primaryStay.photoReference,
+        photoName: primaryStay.photoName,
+        width: 240,
+        height: 180,
+      })
+    )
+    : stayThumbUrl;
   const weatherThumbUrl = buildWeatherImage(
     `${firstWeather?.condition || ''} ${firstWeather?.icon || ''}`.trim() || 'forecast',
     destination,
@@ -121,10 +322,25 @@ export default function OverviewSection() {
     180,
     `overview-weather-${currentTrip.id}-${firstWeather?.date || 'none'}`,
   );
+  const expertAdvice = buildPersonalizedExpertAdvice({
+    destination,
+    travelers: currentTrip.formData.travelers,
+    budget: currentTrip.formData.budget,
+    pace: currentTrip.formData.preferences.pace,
+    interests: currentTrip.formData.preferences.interests || [],
+    origin: currentTrip.formData.origin || '',
+    firstWeather,
+    notesSeed: overview?.notesSeed || [],
+  });
 
   useEffect(() => {
     setCoverImageSrc(coverImageUrl);
   }, [coverImageUrl]);
+
+  useEffect(() => {
+    const stored = (overview?.travelDescription || '').trim();
+    setTravelDescription(stored || generatedTravelDescription);
+  }, [overview?.travelDescription, generatedTravelDescription]);
 
   useEffect(() => {
     setFlightLogoBroken(false);
@@ -203,6 +419,18 @@ export default function OverviewSection() {
     }
   };
 
+  const saveTravelDescription = async () => {
+    setSavingTravelDescription(true);
+    setTravelDescriptionError('');
+    try {
+      await saveOverviewDescription(travelDescription.trim());
+    } catch (err: any) {
+      setTravelDescriptionError(err?.response?.data?.message || 'Could not save travel description.');
+    } finally {
+      setSavingTravelDescription(false);
+    }
+  };
+
   return (
     <div className="card overview-print" style={{ padding: 24 }}>
       <div className="print-only print-doc-header">
@@ -237,9 +465,16 @@ export default function OverviewSection() {
               style={{ width: '100%', height: 260, objectFit: 'cover', display: 'block' }}
               onError={(e) => {
                 const img = e.currentTarget;
-                if (img.dataset.fallback === '1') return;
-                img.dataset.fallback = '1';
-                setCoverImageSrc(fallbackStaticImage);
+                const step = img.dataset.fallbackStep || '0';
+                if (step === '0') {
+                  img.dataset.fallbackStep = '1';
+                  setCoverImageSrc(destinationPlaceImage || fallbackPlaceImage);
+                  return;
+                }
+                if (step === '1') {
+                  img.dataset.fallbackStep = '2';
+                  setCoverImageSrc(fallbackStaticImage);
+                }
               }}
             />
             <div
@@ -338,14 +573,55 @@ export default function OverviewSection() {
           <p className="print-hide" style={{ margin: 0, fontSize: 12, color: 'var(--error)' }}>{imageError}</p>
         )}
 
-        <div className="item-card overview-print-block" style={{ display: 'grid', gap: 6 }}>
-          <p style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--navy-950)' }}>{destination}</p>
-          <p style={{ margin: 0, fontSize: 13, color: 'var(--navy-500)' }}>
-            {dateRange} - {travelersLabel}
-          </p>
-          <p style={{ margin: 0, fontSize: 13, color: 'var(--navy-500)' }}>
-            Origin: {currentTrip.formData.origin || '-'} - Budget tier: {currentTrip.formData.budget}
-          </p>
+        <div
+          className="item-card overview-print-block"
+          style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}
+        >
+          <div style={{ display: 'grid', gap: 6, alignContent: 'start' }}>
+            <p style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--navy-950)' }}>{destination}</p>
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--navy-500)' }}>
+              {dateRange} - {travelersLabel}
+            </p>
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--navy-500)' }}>
+              Origin: {currentTrip.formData.origin || '-'} - Budget tier: {currentTrip.formData.budget}
+            </p>
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gap: 8,
+              alignContent: 'start',
+              borderLeft: '1px solid var(--navy-100)',
+              paddingLeft: 12,
+            }}
+          >
+            <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: 'var(--navy-900)', letterSpacing: '0.02em' }}>
+              Travel Description
+            </p>
+            <textarea
+              className="profile-input print-hide"
+              value={travelDescription}
+              onChange={(e) => setTravelDescription(e.target.value)}
+              rows={5}
+              placeholder="Write a compact trip description..."
+              style={{ width: '100%', resize: 'vertical', fontSize: 13, lineHeight: 1.45 }}
+            />
+            <div className="print-only" style={{ marginTop: 4, fontSize: 13, color: 'var(--navy-700)', whiteSpace: 'pre-wrap' }}>
+              {travelDescription || generatedTravelDescription}
+            </div>
+            <div className="print-hide" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                className="btn btn-ghost btn-sm"
+                disabled={savingTravelDescription}
+                onClick={saveTravelDescription}
+              >
+                {savingTravelDescription ? 'Saving...' : 'Save travel description'}
+              </button>
+            </div>
+            {travelDescriptionError && (
+              <p className="print-hide" style={{ margin: 0, fontSize: 12, color: 'var(--error)' }}>{travelDescriptionError}</p>
+            )}
+          </div>
         </div>
 
         <button
@@ -429,7 +705,7 @@ export default function OverviewSection() {
           >
             {primaryStay && !stayThumbBroken ? (
               <img
-                src={stayThumbUrl}
+                src={stayThumbPreferredUrl}
                 alt={`${primaryStay.name} preview`}
                 loading="lazy"
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -440,7 +716,7 @@ export default function OverviewSection() {
                     return;
                   }
                   img.dataset.fallback = '1';
-                  img.src = buildFallbackImage(`overview-stay-${currentTrip.id}-${primaryStay.id}`, 240, 180);
+                  img.src = stayThumbUrl || buildFallbackImage(`overview-stay-${currentTrip.id}-${primaryStay.id}`, 240, 180);
                 }}
               />
             ) : (
@@ -450,7 +726,7 @@ export default function OverviewSection() {
           <div style={{ flex: 1 }}>
             <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--navy-900)' }}>Primary stay</p>
             <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--navy-500)' }}>
-              {primaryStay ? `${primaryStay.name} - ${primaryStay.priceRange}` : 'No stay selected yet'}
+              {primaryStay ? `${primaryStay.name} - ${primaryStayPrice}` : 'No stay selected yet'}
             </p>
           </div>
           <ArrowRight size={14} style={{ color: 'var(--navy-400)' }} />
@@ -605,19 +881,17 @@ export default function OverviewSection() {
           </div>
         </div>
 
-        {(overview?.summary || (overview?.notesSeed?.length ?? 0) > 0) && (
+        {expertAdvice.length > 0 && (
           <div className="item-card overview-print-block">
-            {overview?.summary && (
-              <p style={{ margin: 0, fontSize: 14, color: 'var(--navy-700)', lineHeight: 1.6 }}>
-                {overview.summary}
-              </p>
-            )}
-            {(overview?.notesSeed?.length ?? 0) > 0 && (
-              <ul style={{ margin: '10px 0 0', paddingLeft: 18, color: 'var(--navy-600)', fontSize: 13 }}>
-                {overview?.notesSeed.map((note) => (
-                  <li key={note}>{note}</li>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: 'var(--navy-900)', letterSpacing: '0.02em' }}>
+              Personalized Expert Advice
+            </p>
+            {expertAdvice.length > 0 && (
+              <ol style={{ margin: '10px 0 0', paddingLeft: 20, color: 'var(--navy-600)', fontSize: 13, display: 'grid', gap: 4 }}>
+                {expertAdvice.map((tip, idx) => (
+                  <li key={`${idx}-${tip}`}>{tip}</li>
                 ))}
-              </ul>
+              </ol>
             )}
           </div>
         )}

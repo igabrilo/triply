@@ -195,6 +195,7 @@ export default function MapSection() {
   const airportCacheRef = useRef<Record<string, Omit<StaticMapPoint, 'id'>>>({});
   const stayCacheRef = useRef<Record<string, Omit<StaticMapPoint, 'id'>>>({});
   const mapContainerRef = useRef<HTMLDivElement>(null);
+  const autoGeocodeAttemptedRef = useRef<Record<string, boolean>>({});
 
   const handleFindLocations = async () => {
     if (!currentTrip) return;
@@ -215,6 +216,43 @@ export default function MapSection() {
       day.activities.map((a) => ({ activity: a, day: day.day, dayTitle: day.title }))
     );
   }, [currentTrip]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const autoGeocode = async () => {
+      if (!currentTrip) return;
+      if (allEntries.length === 0) return;
+
+      const hasMissingCoords = allEntries.some(
+        (entry) => entry.activity.lat == null || entry.activity.lng == null
+      );
+      if (!hasMissingCoords) return;
+
+      const tripKey = String(currentTrip.id);
+      if (autoGeocodeAttemptedRef.current[tripKey]) return;
+      autoGeocodeAttemptedRef.current[tripKey] = true;
+
+      setIsGeocoding(true);
+      try {
+        await tripAPI.geocodeTrip(currentTrip.id);
+        if (!cancelled) {
+          await loadTrip(currentTrip.id);
+        }
+      } catch {
+        // Keep manual geocode button available as fallback.
+      } finally {
+        if (!cancelled) {
+          setIsGeocoding(false);
+        }
+      }
+    };
+
+    autoGeocode();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTrip, allEntries, loadTrip]);
 
   const filteredEntries = useMemo(() => {
     let entries = allEntries;

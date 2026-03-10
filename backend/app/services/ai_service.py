@@ -361,7 +361,7 @@ def generate_overview(form_data: dict, extra_instruction: str | None = None) -> 
         try:
             user_prompt = (
                 _build_trip_user_prompt(form_data)
-                + "\n\nReturn ONLY overview content: short summary, notes seed bullets, and a cinematic destination photo prompt."
+                + "\n\nReturn ONLY overview content: short summary, personalized expert advice bullets in notes_seed, and a cinematic destination photo prompt."
             )
             if extra_instruction:
                 user_prompt += f"\n\nAdditional instruction: {extra_instruction}"

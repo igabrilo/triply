@@ -18,8 +18,8 @@ def _maps_search_url(query: str) -> str:
 
 
 def _overview_place_photo_url(destination: str) -> str:
-    safe_query = quote_plus((destination or '').strip() or 'travel destination')
-    return f"/api/media/place-photo?q={safe_query}&w=1600&h=900"
+    raw = (destination or '').strip() or 'travel destination'
+    return f"/api/media/overview-hero?destination={quote_plus(raw)}&w=1600&h=900"
 
 
 def _activities_to_payload(activities_data):
@@ -82,11 +82,11 @@ def _build_weather_fallback_payload(form_data: dict, expected_days: int) -> list
     start = parsed_start or datetime.now(timezone.utc).date()
 
     patterns = [
-        ('Sunny', '☀️', 29, 20, 44),
-        ('Partly cloudy', '⛅', 27, 18, 52),
-        ('Mostly clear', '🌤️', 28, 19, 48),
-        ('Light showers', '🌦️', 26, 18, 61),
-        ('Cloudy intervals', '🌥️', 25, 17, 56),
+        ('Sunny', 'â˜€ï¸', 29, 20, 44),
+        ('Partly cloudy', 'â›…', 27, 18, 52),
+        ('Mostly clear', 'ðŸŒ¤ï¸', 28, 19, 48),
+        ('Light showers', 'ðŸŒ¦ï¸', 26, 18, 61),
+        ('Cloudy intervals', 'ðŸŒ¥ï¸', 25, 17, 56),
     ]
 
     payload = []
@@ -188,7 +188,7 @@ def create_trip():
 
 
 # ------------------------------------------------------------------
-# SSE streaming endpoint – generates trip sections progressively
+# SSE streaming endpoint â€“ generates trip sections progressively
 # ------------------------------------------------------------------
 @api_bp.route('/trips/<trip_id>/stream', methods=['GET'])
 @require_auth
@@ -374,7 +374,7 @@ def stream_trip_generation(trip_id):
                 retry_data = ai_service.generate_overview(
                     form_data,
                     extra_instruction=(
-                        "Write a concrete summary of at least 18 words and provide at least 3 actionable notes_seed bullets. "
+                        "Write a concrete summary of at least 18 words and provide at least 3 actionable, personalized expert notes_seed bullets. "
                         "Use a vivid, realistic destination_image_prompt."
                     ),
                 )
@@ -657,6 +657,12 @@ def geocode_trip(trip_id):
     or when geocoding previously failed.
     """
     from app.services.geocoding_service import geocode_place
+    from app.services.trip_service import (
+        _destination_fallback_coords,
+        _destination_match_tokens,
+        _geo_matches_destination,
+        _spread_fallback_coords,
+    )
     from app import db as _db
     from app.models.plan_item import PlanItem
     from app.models.trip_day import TripDay
@@ -666,21 +672,122 @@ def geocode_trip(trip_id):
     if not trip:
         return jsonify({'success': False, 'message': 'Trip not found'}), 404
 
+    destination_hint = re.sub(r'\s+', ' ', str(trip.destination or '').strip())
+    destination_geo = None
+    if destination_hint:
+        try:
+            destination_geo = geocode_place(destination_hint)
+        except Exception:
+            destination_geo = None
+    destination_tokens = _destination_match_tokens(destination_hint)
+    destination_static_coords = _destination_fallback_coords(destination_hint) if destination_hint else None
+
+    def _unique_queries(*values: str) -> list[str]:
+        queries: list[str] = []
+        seen: set[str] = set()
+
+        def _add(raw: str):
+            cleaned = re.sub(r'\s+', ' ', str(raw or '').strip())
+            if not cleaned:
+                return
+            key = cleaned.lower()
+            if key in seen:
+                return
+            seen.add(key)
+            queries.append(cleaned)
+
+        for value in values:
+            _add(value)
+        return queries
+
     updated = 0
     for day in trip.days:
         for item in day.plan_items:
-            if item.lat is not None and item.lng is not None:
-                continue  # already geocoded
-            query = item.location_name or item.title or ''
-            if not query:
+            before = (
+                item.lat,
+                item.lng,
+                item.address,
+                item.location_name,
+                item.maps_url,
+            )
+            item_location_token = re.sub(r'[^a-z0-9]+', ' ', str(item.location_name or '').lower()).strip()
+            is_destination_stub = bool(item_location_token and item_location_token in destination_tokens)
+            if item.lat is not None and item.lng is not None and item.maps_url and not is_destination_stub:
                 continue
-            geo = geocode_place(query)
-            if geo['lat'] is not None:
-                item.lat = geo['lat']
-                item.lng = geo['lng']
-                item.address = item.address or geo['address']
-                item.location_name = item.location_name or geo['location_name']
-                item.maps_url = item.maps_url or geo['maps_url']
+
+            base_queries = _unique_queries(
+                item.location_name or '',
+                item.address or '',
+                item.title or '',
+            )
+            candidate_queries = _unique_queries(
+                *[
+                    f"{query}, {destination_hint}"
+                    for query in base_queries
+                    if destination_hint and destination_hint.lower() not in query.lower()
+                ],
+                *base_queries,
+            )
+            if not candidate_queries and destination_hint:
+                candidate_queries = [destination_hint]
+
+            for query in candidate_queries:
+                try:
+                    geo = geocode_place(query)
+                except Exception:
+                    continue
+                if not geo:
+                    continue
+                if not _geo_matches_destination(destination_hint, geo, query):
+                    continue
+                if item.lat is None and geo.get('lat') is not None:
+                    item.lat = geo.get('lat')
+                if item.lng is None and geo.get('lng') is not None:
+                    item.lng = geo.get('lng')
+                item.address = item.address or geo.get('address')
+                item.location_name = item.location_name or geo.get('location_name')
+                item.maps_url = item.maps_url or geo.get('maps_url')
+                if item.lat is not None and item.lng is not None and item.maps_url:
+                    break
+
+            if (item.lat is None or item.lng is None) and destination_geo:
+                base_lat = destination_geo.get('lat')
+                base_lng = destination_geo.get('lng')
+                spread_seed = f"{item.id}:{item.title or item.location_name or ''}"
+                if base_lat is not None and base_lng is not None:
+                    spread_lat, spread_lng = _spread_fallback_coords(float(base_lat), float(base_lng), spread_seed)
+                    if item.lat is None:
+                        item.lat = spread_lat
+                    if item.lng is None:
+                        item.lng = spread_lng
+                item.address = item.address or destination_geo.get('address')
+                item.location_name = item.location_name or destination_geo.get('location_name') or destination_hint
+                if not item.maps_url:
+                    if item.lat is not None and item.lng is not None:
+                        item.maps_url = f"https://www.google.com/maps/search/?api=1&query={item.lat},{item.lng}"
+                    else:
+                        item.maps_url = destination_geo.get('maps_url')
+            if (item.lat is None or item.lng is None) and destination_static_coords:
+                spread_seed = f"{item.id}:{item.title or item.location_name or ''}"
+                spread_lat, spread_lng = _spread_fallback_coords(
+                    float(destination_static_coords[0]),
+                    float(destination_static_coords[1]),
+                    spread_seed,
+                )
+                if item.lat is None:
+                    item.lat = spread_lat
+                if item.lng is None:
+                    item.lng = spread_lng
+                item.location_name = item.location_name or destination_hint
+                item.maps_url = item.maps_url or f"https://www.google.com/maps/search/?api=1&query={item.lat},{item.lng}"
+
+            if (
+                before[0] != item.lat
+                or before[1] != item.lng
+                or before[2] != item.address
+                or before[3] != item.location_name
+                or before[4] != item.maps_url
+            ):
                 updated += 1
 
     _db.session.commit()
@@ -903,6 +1010,23 @@ def update_overview_image(trip_id):
             return jsonify({'success': False, 'message': 'Image is too large'}), 400
 
     TripService.update_overview_image(trip, image_url)
+    return jsonify({'success': True, 'trip': trip.to_dict(include_details=True)}), 200
+
+
+@api_bp.route('/trips/<trip_id>/overview/description', methods=['PUT'])
+@require_auth
+def update_overview_description(trip_id):
+    user = g.current_user
+    trip = TripService.get_trip(trip_id, str(user.id))
+    if not trip:
+        return jsonify({'success': False, 'message': 'Trip not found'}), 404
+
+    payload = request.get_json() or {}
+    description = str(payload.get('description') or '').strip()
+    if len(description) > 6000:
+        return jsonify({'success': False, 'message': 'Description is too long'}), 400
+
+    TripService.update_overview_description(trip, description)
     return jsonify({'success': True, 'trip': trip.to_dict(include_details=True)}), 200
 
 

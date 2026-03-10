@@ -20,6 +20,7 @@ export default function PlanSection() {
   const { openChat } = useChatStore();
   const [dropDay, setDropDay] = useState<number | null>(null);
   const [autofillingDay, setAutofillingDay] = useState<number | null>(null);
+  const [autofillError, setAutofillError] = useState('');
   const [imageErrorByActivityId, setImageErrorByActivityId] = useState<Record<string, boolean>>({});
 
   if (!currentTrip) return null;
@@ -125,8 +126,11 @@ export default function PlanSection() {
                     disabled={autofillingDay === day.day}
                     onClick={async () => {
                       setAutofillingDay(day.day);
+                      setAutofillError('');
                       try {
                         await autofillDay(day.day, 3);
+                      } catch (err: any) {
+                        setAutofillError(err?.response?.data?.message || 'Autofill failed for this day.');
                       } finally {
                         setAutofillingDay(null);
                       }
@@ -137,6 +141,9 @@ export default function PlanSection() {
                   <button onClick={() => openChat({ section: 'plan', dayNumber: day.day })} className="day-edit-btn">Edit</button>
                 </div>
               </div>
+              {autofillError && (
+                <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--error)' }}>{autofillError}</p>
+              )}
 
               <div
                 style={{

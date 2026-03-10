@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import { tripAPI } from '@/services/api';
 import type {
   TripFormData,
@@ -15,20 +15,20 @@ import type {
 } from '@/types';
 
 interface TripState {
-  /* ─── Form ─── */
+  /* â”€â”€â”€ Form â”€â”€â”€ */
   formData: TripFormData;
   updateFormData: (partial: Partial<TripFormData>) => void;
   resetForm: () => void;
   clearRememberedDefaults: () => void;
 
-  /* ─── Generation ─── */
+  /* â”€â”€â”€ Generation â”€â”€â”€ */
   isGenerating: boolean;
   generationStatus: string;
   currentTrip: Trip | null;
   generateTrip: () => Promise<void>;
   loadTrip: (tripId: string) => Promise<void>;
 
-  /* ─── Dashboard ─── */
+  /* â”€â”€â”€ Dashboard â”€â”€â”€ */
   activeTab: TabId;
   setActiveTab: (tab: TabId) => void;
   selectedDay: number | null;
@@ -38,7 +38,7 @@ interface TripState {
   focusStayId: string | null;
   setFocusStayId: (stayId: string | null) => void;
 
-  /* ─── Actions ─── */
+  /* â”€â”€â”€ Actions â”€â”€â”€ */
   toggleFlightSaved: (flightId: string) => void;
   toggleStaySaved: (stayId: string) => void;
   updateActivityStatus: (activityId: string, status: 'planned' | 'saved' | 'must-do' | 'skip') => void;
@@ -52,6 +52,7 @@ interface TripState {
   refreshWeather: () => Promise<void>;
   saveTripNotes: (notes: string) => Promise<void>;
   saveOverviewImage: (imageUrl: string) => Promise<void>;
+  saveOverviewDescription: (description: string) => Promise<void>;
   addBudgetEntry: (payload: { category: string; amount: number; date: string; note?: string }) => Promise<void>;
   updateBudgetEntry: (
     entryId: string,
@@ -59,7 +60,7 @@ interface TripState {
   ) => Promise<void>;
   deleteBudgetEntry: (entryId: string) => Promise<void>;
 
-  /* ─── Section update from chat edits ─── */
+  /* â”€â”€â”€ Section update from chat edits â”€â”€â”€ */
   updatedSections: Record<string, number>;
   markSectionUpdated: (section: string) => void;
   applySectionData: (section: string, data: unknown) => void;
@@ -149,35 +150,46 @@ const phaseLabels: Record<string, string> = {
 };
 
 // ------------------------------------------------------------------
-// Transform backend data → frontend types
+// Transform backend data â†’ frontend types
 // ------------------------------------------------------------------
 function transformDays(backendDays: any[]): PlanDay[] {
-  return backendDays.map((d: any) => ({
-    day: d.dayIndex ?? d.day_index ?? 0,
-    title: d.title || `Day ${(d.dayIndex ?? d.day_index ?? 0) + 1}`,
-    activities: (d.items || d.planItems || []).map((item: any, idx: number) => ({
-      id: item.id || `item_${idx}`,
-      name: item.title || item.name || '',
-      description: item.description || '',
-      timeOfDay: item.timeBlock || item.time_block || '',
-      duration: item.durationMinutes ? `${item.durationMinutes} min` : '',
-      links: [
-        ...(item.mapsUrl || item.maps_url
-          ? [{ label: 'Map', url: item.mapsUrl || item.maps_url, type: 'map' as const }]
-          : []),
-        ...(item.externalUrl || item.external_url
-          ? [{ label: 'Link', url: item.externalUrl || item.external_url, type: 'other' as const }]
-          : []),
-      ],
-      status: item.status || 'planned',
-      tags: [item.category || item.timeBlock || item.time_block].filter(Boolean) as string[],
-      category: item.category || null,
-      lat: item.lat ?? null,
-      lng: item.lng ?? null,
-      locationName: item.locationName || item.location_name || '',
-      address: item.address || '',
-    })),
-  }));
+  const sortedDays = [...(backendDays || [])].sort((a: any, b: any) => {
+    const aRaw = Number(a?.dayIndex ?? a?.day_index);
+    const bRaw = Number(b?.dayIndex ?? b?.day_index);
+    const aKey = Number.isFinite(aRaw) ? aRaw : Number.MAX_SAFE_INTEGER;
+    const bKey = Number.isFinite(bRaw) ? bRaw : Number.MAX_SAFE_INTEGER;
+    return aKey - bKey;
+  });
+
+  return sortedDays.map((d: any, dayIdx: number) => {
+    const dayNumber = dayIdx + 1;
+    return {
+      day: dayNumber,
+      title: d.title || `Day ${dayNumber}`,
+      activities: (d.items || d.planItems || []).map((item: any, idx: number) => ({
+        id: item.id || `item_${idx}`,
+        name: item.title || item.name || '',
+        description: item.description || '',
+        timeOfDay: item.timeBlock || item.time_block || '',
+        duration: item.durationMinutes ? `${item.durationMinutes} min` : '',
+        links: [
+          ...(item.mapsUrl || item.maps_url
+            ? [{ label: 'Map', url: item.mapsUrl || item.maps_url, type: 'map' as const }]
+            : []),
+          ...(item.externalUrl || item.external_url
+            ? [{ label: 'Link', url: item.externalUrl || item.external_url, type: 'other' as const }]
+            : []),
+        ],
+        status: item.status || 'planned',
+        tags: [item.category || item.timeBlock || item.time_block].filter(Boolean) as string[],
+        category: item.category || null,
+        lat: item.lat ?? null,
+        lng: item.lng ?? null,
+        locationName: item.locationName || item.location_name || '',
+        address: item.address || '',
+      })),
+    };
+  });
 }
 
 function transformFlights(backendFlights: any[], selectedFlightId?: string | null): Flight[] {
@@ -192,7 +204,7 @@ function transformFlights(backendFlights: any[], selectedFlightId?: string | nul
       arrivalTime: details.arriveTimeHint || (f.arriveTime ? new Date(f.arriveTime).toLocaleTimeString() : ''),
       duration: details.durationHint || (f.durationMinutes ? `${f.durationMinutes} min` : ''),
       stops: f.stopsCount ?? f.stops_count ?? 0,
-      priceRange: details.priceHint || (f.price ? `€${f.price}` : ''),
+      priceRange: details.priceHint || (f.price ? `â‚¬${f.price}` : ''),
       bookingUrl: f.deepLinkUrl || f.deep_link_url || details.bookingSearchUrl || '#',
       saved: f.saved || false,
       isSelected: (f.id || `flight_${idx}`) === selectedFlightId,
@@ -203,20 +215,49 @@ function transformFlights(backendFlights: any[], selectedFlightId?: string | nul
 function transformStays(backendStays: any[], selectedStayId?: string | null): Stay[] {
   return backendStays.map((s: any, idx: number) => {
     const details = s.details || {};
+    const priceFromPayload =
+      details.priceRange ||
+      details.price_range ||
+      details.priceHint ||
+      details.price_hint ||
+      s.priceRange ||
+      s.price_range ||
+      s.price_hint ||
+      '';
+    const numericPrice =
+      s.price ??
+      s.price_amount ??
+      details.price ??
+      details.price_amount ??
+      null;
+    const currency =
+      s.priceCurrency ||
+      s.price_currency ||
+      details.priceCurrency ||
+      details.price_currency ||
+      'EUR';
+    const priceRange = priceFromPayload
+      ? String(priceFromPayload)
+      : numericPrice != null
+      ? `${currency} ${Number(numericPrice).toFixed(0)}/night`
+      : 'Price on request';
     return {
       id: s.id || `stay_${idx}`,
       name: s.name || 'Unknown',
-      type: details.stayType || s.stay_type || 'Hotel',
-      neighborhood: s.neighborhood || '',
+      type: details.stayType || details.stay_type || s.stayType || s.stay_type || 'Hotel',
+      neighborhood: s.neighborhood || details.neighborhood || '',
       lat: s.lat ?? details.lat ?? null,
       lng: s.lng ?? details.lng ?? null,
       mapsUrl: s.mapsUrl || s.maps_url || details.mapsUrl || details.maps_url || '',
-      priceRange: details.priceRange || s.price_range || (s.price ? `€${s.price}/night` : ''),
-      rating: s.rating ?? s.rating_hint ?? 0,
+      placeId: s.placeId || s.place_id || details.placeId || details.place_id || '',
+      photoReference: s.photoReference || s.photo_reference || details.photoReference || details.photo_reference || '',
+      photoName: s.photoName || s.photo_name || details.photoName || details.photo_name || '',
+      priceRange,
+      rating: s.rating ?? s.rating_hint ?? details.rating ?? details.rating_hint ?? 0,
       reviewCount: 0,
-      whyItFits: s.whyItFits || s.why_it_fits || '',
+      whyItFits: s.whyItFits || s.why_it_fits || details.whyItFits || details.why_it_fits || '',
       imageUrl: s.imageUrl || s.image_url || details.imageUrl || details.image_url || '',
-      bookingUrl: s.deepLinkUrl || s.deep_link_url || details.bookingSearchUrl || '#',
+      bookingUrl: s.deepLinkUrl || s.deep_link_url || details.bookingSearchUrl || details.booking_search_url || '#',
       amenities: details.amenities || s.amenities || [],
       saved: s.saved || false,
       isSelected: (s.id || `stay_${idx}`) === selectedStayId,
@@ -296,6 +337,7 @@ function transformOverview(backendOverview: any): OverviewData | null {
     destinationImageUrl: backendOverview.destination_image_url || backendOverview.destinationImageUrl || '',
     notesSeed: backendOverview.notes_seed || backendOverview.notesSeed || [],
     notes: backendOverview.notes || '',
+    travelDescription: backendOverview.travel_description || backendOverview.travelDescription || '',
   };
 }
 
@@ -414,7 +456,7 @@ export const useTripStore = create<TripState>((set, get) => ({
       };
       set({ currentTrip: trip, focusFlightId: null, focusStayId: null });
 
-      // Open SSE stream (fire-and-forget – updates arrive asynchronously)
+      // Open SSE stream (fire-and-forget â€“ updates arrive asynchronously)
       const eventSource = await tripAPI.streamGeneration(tripId);
 
       eventSource.addEventListener('status', (e: MessageEvent) => {
@@ -500,7 +542,7 @@ export const useTripStore = create<TripState>((set, get) => ({
         }));
       };
 
-      // Resolve immediately – SSE events will continue updating state
+      // Resolve immediately â€“ SSE events will continue updating state
     } catch (err: any) {
       console.error('Trip creation failed:', err);
       set({
@@ -613,7 +655,12 @@ export const useTripStore = create<TripState>((set, get) => ({
   autofillDay: async (dayNumber, limit = 3) => {
     const { currentTrip, loadTrip } = get();
     if (!currentTrip) return;
-    await tripAPI.autofillDay(currentTrip.id, dayNumber, limit);
+    const result = await tripAPI.autofillDay(currentTrip.id, dayNumber, limit);
+    if (result?.success && result?.trip) {
+      const mapped = mapBackendTripToTrip(result.trip);
+      set({ currentTrip: mapped });
+      return;
+    }
     await loadTrip(currentTrip.id);
   },
 
@@ -638,6 +685,13 @@ export const useTripStore = create<TripState>((set, get) => ({
     await loadTrip(currentTrip.id);
   },
 
+  saveOverviewDescription: async (description) => {
+    const { currentTrip, loadTrip } = get();
+    if (!currentTrip) return;
+    await tripAPI.updateOverviewDescription(currentTrip.id, description);
+    await loadTrip(currentTrip.id);
+  },
+
   addBudgetEntry: async (payload) => {
     const { currentTrip, loadTrip } = get();
     if (!currentTrip) return;
@@ -655,7 +709,12 @@ export const useTripStore = create<TripState>((set, get) => ({
   deleteBudgetEntry: async (entryId) => {
     const { currentTrip, loadTrip } = get();
     if (!currentTrip) return;
-    await tripAPI.deleteBudgetEntry(currentTrip.id, entryId);
+    const result = await tripAPI.deleteBudgetEntry(currentTrip.id, entryId);
+    if (result?.success && result?.trip) {
+      const mapped = mapBackendTripToTrip(result.trip);
+      set({ currentTrip: mapped });
+      return;
+    }
     await loadTrip(currentTrip.id);
   },
 
