@@ -1,13 +1,14 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { Maximize2, MapPin, ExternalLink, Map as MapIcon } from 'lucide-react';
+import { Maximize2, MapPin, ExternalLink, Map as MapIcon, Loader } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
+import { geocodeAPI, tripAPI } from '@/services/api';
 import Modal from '@components/ui/Modal';
 import Chip from '@components/ui/Chip';
 import type { Activity } from '@/types';
-import { useEffect } from 'react';
+import { buildActivityImage, buildFallbackImage } from '@/utils/mediaImages';
 
 import 'leaflet/dist/leaflet.css';
 
@@ -75,6 +76,13 @@ interface MapActivityEntry {
   activity: Activity;
   day: number;
   dayTitle: string;
+}
+
+interface FallbackStayPoint {
+  lat: number;
+  lng: number;
+  locationName: string;
+  mapsUrl: string;
 }
 
 function FitBounds({ entries }: { entries: MapActivityEntry[] }) {
@@ -157,11 +165,15 @@ function createActiveMarkerIcon(color: string, emoji: string, step?: string): L.
 /* ── Main component ── */
 
 export default function SidebarMap() {
-  const { currentTrip, selectedDay, setSelectedDay } = useTripStore();
+  const { currentTrip, selectedDay, setSelectedDay, loadTrip } = useTripStore();
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeCategory, setActiveCategory] = useState('All');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [isAutoGeocoding, setIsAutoGeocoding] = useState(false);
+  const [imageErrorByActivityId, setImageErrorByActivityId] = useState<Record<string, boolean>>({});
+  const [fallbackStayPoint, setFallbackStayPoint] = useState<FallbackStayPoint | null>(null);
+  const autoGeocodeAttemptedRef = useRef<Record<string, boolean>>({});
 
   const allEntries = useMemo<MapActivityEntry[]>(() => {
     if (!currentTrip) return [];
@@ -169,6 +181,45 @@ export default function SidebarMap() {
       day.activities.map((a) => ({ activity: a, day: day.day, dayTitle: day.title }))
     );
   }, [currentTrip]);
+
+  const hasPlanActivities = allEntries.length > 0;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const autoGeocode = async () => {
+      if (!currentTrip) return;
+      if (!hasPlanActivities) return;
+
+      const hasMissingCoords = allEntries.some(
+        (entry) => entry.activity.lat == null || entry.activity.lng == null
+      );
+      if (!hasMissingCoords) return;
+
+      const tripKey = String(currentTrip.id);
+      if (autoGeocodeAttemptedRef.current[tripKey]) return;
+      autoGeocodeAttemptedRef.current[tripKey] = true;
+
+      setIsAutoGeocoding(true);
+      try {
+        await tripAPI.geocodeTrip(currentTrip.id);
+        if (!cancelled) {
+          await loadTrip(currentTrip.id);
+        }
+      } catch {
+        // Keep map usable even if background geocoding fails.
+      } finally {
+        if (!cancelled) {
+          setIsAutoGeocoding(false);
+        }
+      }
+    };
+
+    autoGeocode();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTrip, allEntries, hasPlanActivities, loadTrip]);
 
   const filteredEntries = useMemo(() => {
     let entries = allEntries;
@@ -181,9 +232,112 @@ export default function SidebarMap() {
     return entries;
   }, [allEntries, selectedDay, activeCategory]);
 
+  const primaryStay = useMemo(() => {
+    if (!currentTrip) return null;
+    return (
+      currentTrip.stays.find((s) => s.id === currentTrip.selectedStayId) ||
+      currentTrip.stays.find((s) => s.saved) ||
+      currentTrip.stays[0] ||
+      null
+    );
+  }, [currentTrip]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveStayPoint = async () => {
+      if (!currentTrip || !primaryStay) {
+        if (!cancelled) setFallbackStayPoint(null);
+        return;
+      }
+
+      if (primaryStay.lat != null && primaryStay.lng != null) {
+        if (!cancelled) {
+          const stayLat = Number(primaryStay.lat);
+          const stayLng = Number(primaryStay.lng);
+          setFallbackStayPoint({
+            lat: stayLat,
+            lng: stayLng,
+            locationName: primaryStay.neighborhood || primaryStay.type || 'Primary stay',
+            mapsUrl: primaryStay.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${stayLat},${stayLng}`,
+          });
+        }
+        return;
+      }
+
+      const destinationHint = currentTrip.formData.destinations[0] || '';
+      const query = [primaryStay.name, primaryStay.neighborhood, destinationHint].filter(Boolean).join(', ');
+      if (!query.trim()) {
+        if (!cancelled) setFallbackStayPoint(null);
+        return;
+      }
+
+      try {
+        const res = await geocodeAPI.searchPlace(query);
+        const geo = res?.result;
+        if (!cancelled && geo?.lat != null && geo?.lng != null) {
+          const lat = Number(geo.lat);
+          const lng = Number(geo.lng);
+          setFallbackStayPoint({
+            lat,
+            lng,
+            locationName: geo.location_name || geo.address || primaryStay.neighborhood || primaryStay.type || 'Primary stay',
+            mapsUrl: primaryStay.mapsUrl || geo.maps_url || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`,
+          });
+        }
+      } catch {
+        if (!cancelled) setFallbackStayPoint(null);
+      }
+    };
+
+    resolveStayPoint();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentTrip,
+    primaryStay?.id,
+    primaryStay?.name,
+    primaryStay?.neighborhood,
+    primaryStay?.type,
+    primaryStay?.lat,
+    primaryStay?.lng,
+    primaryStay?.mapsUrl,
+  ]);
+
+  const fallbackEntry = useMemo<MapActivityEntry | null>(() => {
+    if (!currentTrip || !primaryStay || !fallbackStayPoint) return null;
+    return {
+      day: selectedDay ?? currentTrip.plan[0]?.day ?? 1,
+      dayTitle: 'Primary stay',
+      activity: {
+        id: `stay-${primaryStay.id}`,
+        name: primaryStay.name || 'Primary stay',
+        description: primaryStay.whyItFits || 'Your base location for this trip.',
+        timeOfDay: 'Base location',
+        duration: '',
+        links: fallbackStayPoint.mapsUrl
+          ? [{ label: 'Map', url: fallbackStayPoint.mapsUrl, type: 'map' }]
+          : [],
+        status: 'planned',
+        tags: ['stay'],
+        category: 'stay',
+        lat: fallbackStayPoint.lat,
+        lng: fallbackStayPoint.lng,
+        locationName: fallbackStayPoint.locationName,
+        address: '',
+      },
+    };
+  }, [currentTrip, primaryStay, fallbackStayPoint, selectedDay]);
+
+  const displayEntries = useMemo<MapActivityEntry[]>(() => {
+    if (filteredEntries.length > 0) return filteredEntries;
+    return fallbackEntry ? [fallbackEntry] : [];
+  }, [filteredEntries, fallbackEntry]);
+
   const mappableEntries = useMemo(
-    () => filteredEntries.filter((e) => e.activity.lat != null && e.activity.lng != null),
-    [filteredEntries]
+    () => displayEntries.filter((e) => e.activity.lat != null && e.activity.lng != null),
+    [displayEntries]
   );
 
   const stepNumbers = useMemo(() => {
@@ -201,7 +355,38 @@ export default function SidebarMap() {
     ? mappableEntries.find((e) => e.activity.id === focusedId)
     : null;
 
-  if (!currentTrip || mappableEntries.length === 0) return null;
+  if (!currentTrip) return null;
+  if (mappableEntries.length === 0) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.35 }}
+        className="card"
+        style={{ padding: 16 }}
+      >
+        <div className="section-header" style={{ marginBottom: 8 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-800)' }}>Map</h3>
+        </div>
+        <div className="map-empty-state" style={{ minHeight: 132 }}>
+          {isAutoGeocoding ? (
+            <Loader size={28} style={{ color: 'var(--primary-500)', marginBottom: 8, animation: 'spin 1s linear infinite' }} />
+          ) : (
+            <MapPin size={28} style={{ color: 'var(--primary-400)', marginBottom: 8 }} />
+          )}
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--navy-700)', margin: 0 }}>
+            {isAutoGeocoding ? 'Preparing map locations' : 'Map locations unavailable'}
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--navy-500)', margin: '6px 0 0', textAlign: 'center' }}>
+            {hasPlanActivities
+              ? 'Syncing activity coordinates so all planned activities appear on map.'
+              : 'Add activities to your plan and map will appear here.'}
+          </p>
+        </div>
+      </motion.div>
+    );
+  }
+  const destination = currentTrip.formData.destinations[0] || 'destination';
 
   const defaultCenter: [number, number] = [
     mappableEntries[0].activity.lat!,
@@ -310,6 +495,25 @@ export default function SidebarMap() {
                     >
                       <Popup>
                         <div className="map-popup">
+                          <img
+                            src={buildActivityImage(
+                              [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
+                              destination,
+                              activity.category || 'activity',
+                              480,
+                              260,
+                              `sidebar-map-popup-${currentTrip.id}-${activity.id}`,
+                            )}
+                            alt={activity.name}
+                            loading="lazy"
+                            style={{ width: '100%', height: 96, objectFit: 'cover', borderRadius: 8, marginBottom: 8, display: 'block' }}
+                            onError={(e) => {
+                              const img = e.currentTarget;
+                              if (img.dataset.fallback === '1') return;
+                              img.dataset.fallback = '1';
+                              img.src = buildFallbackImage(`sidebar-map-popup-${currentTrip.id}-${activity.id}`, 480, 260);
+                            }}
+                          />
                           <strong>{activity.name}</strong>
                           {activity.locationName && (
                             <p className="map-popup-location">{activity.locationName}</p>
@@ -387,7 +591,7 @@ export default function SidebarMap() {
 
             {/* Activity list */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, overflowY: 'auto' }}>
-              {filteredEntries.map((entry) => {
+              {displayEntries.map((entry) => {
                 const { activity } = entry;
                 const meta = getCategoryMeta(activity.category);
                 const hasCoords = activity.lat != null && activity.lng != null;
@@ -406,14 +610,54 @@ export default function SidebarMap() {
                     style={{ cursor: hasCoords ? 'pointer' : 'default' }}
                   >
                     <div
-                      className="map-day-badge"
                       style={{
-                        background: `${meta.color}18`,
-                        color: meta.color,
-                        fontSize: 14,
+                        width: 40,
+                        height: 40,
+                        borderRadius: 10,
+                        overflow: 'hidden',
+                        border: `1px solid ${isActive ? `${meta.color}66` : 'var(--navy-100)'}`,
+                        background: 'var(--navy-50)',
+                        flexShrink: 0,
                       }}
                     >
-                      {meta.icon}
+                      {imageErrorByActivityId[activity.id] ? (
+                        <div
+                          className="map-day-badge"
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            background: `${meta.color}18`,
+                            color: meta.color,
+                            fontSize: 14,
+                            borderRadius: 0,
+                          }}
+                        >
+                          {meta.icon}
+                        </div>
+                      ) : (
+                        <img
+                          src={buildActivityImage(
+                            [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
+                            destination,
+                            activity.category || 'activity',
+                            320,
+                            240,
+                            `sidebar-map-${currentTrip.id}-${activity.id}`,
+                          )}
+                          alt={activity.name}
+                          loading="lazy"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          onError={(e) => {
+                            const img = e.currentTarget;
+                            if (img.dataset.fallback === '1') {
+                              setImageErrorByActivityId((prev) => ({ ...prev, [activity.id]: true }));
+                              return;
+                            }
+                            img.dataset.fallback = '1';
+                            img.src = buildFallbackImage(`sidebar-map-${currentTrip.id}-${activity.id}`, 320, 240);
+                          }}
+                        />
+                      )}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{

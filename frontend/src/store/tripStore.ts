@@ -1,35 +1,69 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import { tripAPI } from '@/services/api';
-import type { TripFormData, Trip, TabId, BudgetLevel, PlanDay, Flight, Stay } from '@/types';
+import type {
+  TripFormData,
+  Trip,
+  TabId,
+  BudgetLevel,
+  PlanDay,
+  Flight,
+  Stay,
+  SuggestedActivity,
+  WeatherDay,
+  BudgetHint,
+  OverviewData,
+} from '@/types';
 
 interface TripState {
-  /* ─── Form ─── */
+  /* â”€â”€â”€ Form â”€â”€â”€ */
   formData: TripFormData;
   updateFormData: (partial: Partial<TripFormData>) => void;
   resetForm: () => void;
+  clearRememberedDefaults: () => void;
 
-  /* ─── Generation ─── */
+  /* â”€â”€â”€ Generation â”€â”€â”€ */
   isGenerating: boolean;
   generationStatus: string;
   currentTrip: Trip | null;
   generateTrip: () => Promise<void>;
   loadTrip: (tripId: string) => Promise<void>;
 
-  /* ─── Dashboard ─── */
+  /* â”€â”€â”€ Dashboard â”€â”€â”€ */
   activeTab: TabId;
   setActiveTab: (tab: TabId) => void;
   selectedDay: number | null;
   setSelectedDay: (day: number | null) => void;
+  focusFlightId: string | null;
+  setFocusFlightId: (flightId: string | null) => void;
+  focusStayId: string | null;
+  setFocusStayId: (stayId: string | null) => void;
 
-  /* ─── Actions ─── */
+  /* â”€â”€â”€ Actions â”€â”€â”€ */
   toggleFlightSaved: (flightId: string) => void;
   toggleStaySaved: (stayId: string) => void;
   updateActivityStatus: (activityId: string, status: 'planned' | 'saved' | 'must-do' | 'skip') => void;
+  selectPrimaryFlight: (flightId: string) => Promise<void>;
+  selectPrimaryStay: (stayId: string) => Promise<void>;
+  addSuggestedActivityToDay: (activityId: string, dayNumber: number) => Promise<void>;
+  updateSuggestedActivityStatus: (activityId: string, status: 'suggested' | 'saved' | 'dismissed') => Promise<void>;
+  generateMoreActivities: (category?: string) => Promise<void>;
+  returnPlanItemToBucket: (itemId: string) => Promise<void>;
+  autofillDay: (dayNumber: number, limit?: number) => Promise<void>;
+  refreshWeather: () => Promise<void>;
+  saveTripNotes: (notes: string) => Promise<void>;
+  saveOverviewImage: (imageUrl: string) => Promise<void>;
+  saveOverviewDescription: (description: string) => Promise<void>;
+  addBudgetEntry: (payload: { category: string; amount: number; date: string; note?: string }) => Promise<void>;
+  updateBudgetEntry: (
+    entryId: string,
+    payload: { category?: string; amount?: number; date?: string; note?: string },
+  ) => Promise<void>;
+  deleteBudgetEntry: (entryId: string) => Promise<void>;
 
-  /* ─── Section update from chat edits ─── */
+  /* â”€â”€â”€ Section update from chat edits â”€â”€â”€ */
   updatedSections: Record<string, number>;
   markSectionUpdated: (section: string) => void;
-  applySectionData: (section: string, data: unknown[]) => void;
+  applySectionData: (section: string, data: unknown) => void;
 }
 
 const defaultFormData: TripFormData = {
@@ -50,6 +84,58 @@ const defaultFormData: TripFormData = {
   },
 };
 
+const FORM_MEMORY_KEY = 'triply:last-trip-defaults:v1';
+
+type FormMemoryPayload = {
+  origin?: string;
+  budget?: BudgetLevel;
+  pace?: 'relaxed' | 'balanced' | 'packed';
+};
+
+function loadFormMemory(): FormMemoryPayload {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(FORM_MEMORY_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as FormMemoryPayload;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveFormMemory(formData: TripFormData): void {
+  if (typeof window === 'undefined') return;
+  const payload: FormMemoryPayload = {
+    origin: (formData.origin || '').trim(),
+    budget: formData.budget,
+    pace: formData.preferences.pace,
+  };
+  window.localStorage.setItem(FORM_MEMORY_KEY, JSON.stringify(payload));
+}
+
+function clearFormMemory(): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(FORM_MEMORY_KEY);
+}
+
+function initialFormData(): TripFormData {
+  const memory = loadFormMemory();
+  const validBudget: BudgetLevel[] = ['budget', 'mid', 'premium', 'luxury'];
+  const validPace: Array<'relaxed' | 'balanced' | 'packed'> = ['relaxed', 'balanced', 'packed'];
+  const paceValue = memory.pace;
+
+  return {
+    ...defaultFormData,
+    origin: memory.origin || defaultFormData.origin,
+    budget: validBudget.includes(memory.budget as BudgetLevel) ? (memory.budget as BudgetLevel) : defaultFormData.budget,
+    preferences: {
+      ...defaultFormData.preferences,
+      pace: paceValue && validPace.includes(paceValue) ? paceValue : defaultFormData.preferences.pace,
+    },
+  };
+}
+
 // ------------------------------------------------------------------
 // Status labels for each generation phase
 // ------------------------------------------------------------------
@@ -57,41 +143,56 @@ const phaseLabels: Record<string, string> = {
   generating_plan: 'Building your itinerary...',
   generating_stays: 'Finding accommodation...',
   generating_flights: 'Searching flights...',
+  generating_activities: 'Curating activity ideas...',
+  generating_weather: 'Checking weather forecast...',
+  generating_budget: 'Estimating budget...',
+  generating_overview: 'Creating overview and destination hero...',
 };
 
 // ------------------------------------------------------------------
-// Transform backend data → frontend types
+// Transform backend data â†’ frontend types
 // ------------------------------------------------------------------
 function transformDays(backendDays: any[]): PlanDay[] {
-  return backendDays.map((d: any) => ({
-    day: d.dayIndex ?? d.day_index ?? 0,
-    title: d.title || `Day ${(d.dayIndex ?? d.day_index ?? 0) + 1}`,
-    activities: (d.items || d.planItems || []).map((item: any, idx: number) => ({
-      id: item.id || `item_${idx}`,
-      name: item.title || item.name || '',
-      description: item.description || '',
-      timeOfDay: item.timeBlock || item.time_block || '',
-      duration: item.durationMinutes ? `${item.durationMinutes} min` : '',
-      links: [
-        ...(item.mapsUrl || item.maps_url
-          ? [{ label: 'Map', url: item.mapsUrl || item.maps_url, type: 'map' as const }]
-          : []),
-        ...(item.externalUrl || item.external_url
-          ? [{ label: 'Link', url: item.externalUrl || item.external_url, type: 'other' as const }]
-          : []),
-      ],
-      status: item.status || 'planned',
-      tags: [item.category || item.timeBlock || item.time_block].filter(Boolean) as string[],
-      category: item.category || null,
-      lat: item.lat ?? null,
-      lng: item.lng ?? null,
-      locationName: item.locationName || item.location_name || '',
-      address: item.address || '',
-    })),
-  }));
+  const sortedDays = [...(backendDays || [])].sort((a: any, b: any) => {
+    const aRaw = Number(a?.dayIndex ?? a?.day_index);
+    const bRaw = Number(b?.dayIndex ?? b?.day_index);
+    const aKey = Number.isFinite(aRaw) ? aRaw : Number.MAX_SAFE_INTEGER;
+    const bKey = Number.isFinite(bRaw) ? bRaw : Number.MAX_SAFE_INTEGER;
+    return aKey - bKey;
+  });
+
+  return sortedDays.map((d: any, dayIdx: number) => {
+    const dayNumber = dayIdx + 1;
+    return {
+      day: dayNumber,
+      title: d.title || `Day ${dayNumber}`,
+      activities: (d.items || d.planItems || []).map((item: any, idx: number) => ({
+        id: item.id || `item_${idx}`,
+        name: item.title || item.name || '',
+        description: item.description || '',
+        timeOfDay: item.timeBlock || item.time_block || '',
+        duration: item.durationMinutes ? `${item.durationMinutes} min` : '',
+        links: [
+          ...(item.mapsUrl || item.maps_url
+            ? [{ label: 'Map', url: item.mapsUrl || item.maps_url, type: 'map' as const }]
+            : []),
+          ...(item.externalUrl || item.external_url
+            ? [{ label: 'Link', url: item.externalUrl || item.external_url, type: 'other' as const }]
+            : []),
+        ],
+        status: item.status || 'planned',
+        tags: [item.category || item.timeBlock || item.time_block].filter(Boolean) as string[],
+        category: item.category || null,
+        lat: item.lat ?? null,
+        lng: item.lng ?? null,
+        locationName: item.locationName || item.location_name || '',
+        address: item.address || '',
+      })),
+    };
+  });
 }
 
-function transformFlights(backendFlights: any[]): Flight[] {
+function transformFlights(backendFlights: any[], selectedFlightId?: string | null): Flight[] {
   return backendFlights.map((f: any, idx: number) => {
     const details = f.details || {};
     return {
@@ -103,30 +204,186 @@ function transformFlights(backendFlights: any[]): Flight[] {
       arrivalTime: details.arriveTimeHint || (f.arriveTime ? new Date(f.arriveTime).toLocaleTimeString() : ''),
       duration: details.durationHint || (f.durationMinutes ? `${f.durationMinutes} min` : ''),
       stops: f.stopsCount ?? f.stops_count ?? 0,
-      priceRange: details.priceHint || (f.price ? `€${f.price}` : ''),
+      priceRange: details.priceHint || (f.price ? `â‚¬${f.price}` : ''),
       bookingUrl: f.deepLinkUrl || f.deep_link_url || details.bookingSearchUrl || '#',
       saved: f.saved || false,
+      isSelected: (f.id || `flight_${idx}`) === selectedFlightId,
     };
   });
 }
 
-function transformStays(backendStays: any[]): Stay[] {
+function transformStays(backendStays: any[], selectedStayId?: string | null): Stay[] {
   return backendStays.map((s: any, idx: number) => {
     const details = s.details || {};
+    const priceFromPayload =
+      details.priceRange ||
+      details.price_range ||
+      details.priceHint ||
+      details.price_hint ||
+      s.priceRange ||
+      s.price_range ||
+      s.price_hint ||
+      '';
+    const numericPrice =
+      s.price ??
+      s.price_amount ??
+      details.price ??
+      details.price_amount ??
+      null;
+    const currency =
+      s.priceCurrency ||
+      s.price_currency ||
+      details.priceCurrency ||
+      details.price_currency ||
+      'EUR';
+    const priceRange = priceFromPayload
+      ? String(priceFromPayload)
+      : numericPrice != null
+      ? `${currency} ${Number(numericPrice).toFixed(0)}/night`
+      : 'Price on request';
     return {
       id: s.id || `stay_${idx}`,
       name: s.name || 'Unknown',
-      type: details.stayType || s.stay_type || 'Hotel',
-      neighborhood: s.neighborhood || '',
-      priceRange: details.priceRange || s.price_range || (s.price ? `€${s.price}/night` : ''),
-      rating: s.rating ?? s.rating_hint ?? 0,
+      type: details.stayType || details.stay_type || s.stayType || s.stay_type || 'Hotel',
+      neighborhood: s.neighborhood || details.neighborhood || '',
+      lat: s.lat ?? details.lat ?? null,
+      lng: s.lng ?? details.lng ?? null,
+      mapsUrl: s.mapsUrl || s.maps_url || details.mapsUrl || details.maps_url || '',
+      placeId: s.placeId || s.place_id || details.placeId || details.place_id || '',
+      photoReference: s.photoReference || s.photo_reference || details.photoReference || details.photo_reference || '',
+      photoName: s.photoName || s.photo_name || details.photoName || details.photo_name || '',
+      priceRange,
+      rating: s.rating ?? s.rating_hint ?? details.rating ?? details.rating_hint ?? 0,
       reviewCount: 0,
-      whyItFits: s.whyItFits || s.why_it_fits || '',
-      bookingUrl: s.deepLinkUrl || s.deep_link_url || details.bookingSearchUrl || '#',
+      whyItFits: s.whyItFits || s.why_it_fits || details.whyItFits || details.why_it_fits || '',
+      imageUrl: s.imageUrl || s.image_url || details.imageUrl || details.image_url || '',
+      bookingUrl: s.deepLinkUrl || s.deep_link_url || details.bookingSearchUrl || details.booking_search_url || '#',
       amenities: details.amenities || s.amenities || [],
       saved: s.saved || false,
+      isSelected: (s.id || `stay_${idx}`) === selectedStayId,
     };
   });
+}
+
+function transformActivities(backendActivities: any[]): SuggestedActivity[] {
+  return (backendActivities || []).map((a: any, idx: number) => ({
+    id: a.id || `act_${idx}`,
+    title: a.title || '',
+    description: a.description || '',
+    category: a.category || 'custom',
+    durationMinutes: a.duration_minutes ?? a.durationMinutes ?? null,
+    costHint: a.cost_hint || a.costHint || '',
+    placeQuery: a.place_query || a.placeQuery || '',
+    mapsUrl: a.maps_url || a.mapsUrl || '',
+    imageQuery: a.image_query || a.imageQuery || '',
+    locationName: a.location_name || a.locationName || '',
+    address: a.address || '',
+    lat: a.lat ?? null,
+    lng: a.lng ?? null,
+    status: a.status || 'suggested',
+  }));
+}
+
+function transformWeather(backendWeather: any[]): WeatherDay[] {
+  return (backendWeather || []).map((w: any) => ({
+    date: w.date || '',
+    highTempC: w.high_temp_c ?? w.highTempC ?? null,
+    lowTempC: w.low_temp_c ?? w.lowTempC ?? null,
+    condition: w.condition || '',
+    icon: w.icon || '',
+    humidityPct: w.humidity_pct ?? w.humidityPct ?? null,
+  }));
+}
+
+function transformBudget(backendBudget: any): BudgetHint | null {
+  if (!backendBudget) return null;
+  const currency = backendBudget.currency || backendBudget.summary?.currency || 'EUR';
+  const entries = (backendBudget.entries || []).map((e: any) => ({
+    id: e.id || '',
+    category: e.category || 'other',
+    amount: Number(e.amount ?? 0),
+    currency: e.currency || currency,
+    date: e.date || '',
+    note: e.note || '',
+    createdAt: e.createdAt || e.created_at || '',
+    updatedAt: e.updatedAt || e.updated_at || '',
+  }));
+  const estimated = backendBudget.total_estimated ?? backendBudget.totalEstimated ?? backendBudget.summary?.estimatedTotal ?? null;
+  const actual = backendBudget.summary?.actualTotal ?? entries.reduce((sum: number, e: any) => sum + (Number(e.amount) || 0), 0);
+  const delta = backendBudget.summary?.delta ?? (estimated != null ? Number(estimated) - Number(actual) : null);
+  return {
+    currency,
+    totalEstimated: estimated,
+    categories: (backendBudget.categories || []).map((c: any) => ({
+      category: c.category || 'other',
+      estimatedAmount: c.estimated_amount ?? c.estimatedAmount ?? null,
+      note: c.note || '',
+    })),
+    entries,
+    summary: {
+      estimatedTotal: estimated,
+      actualTotal: Number(actual || 0),
+      delta: delta == null ? null : Number(delta),
+      currency,
+    },
+  };
+}
+
+function transformOverview(backendOverview: any): OverviewData | null {
+  if (!backendOverview) return null;
+  return {
+    summary: backendOverview.summary || '',
+    destinationImagePrompt: backendOverview.destination_image_prompt || backendOverview.destinationImagePrompt || '',
+    destinationImageUrl: backendOverview.destination_image_url || backendOverview.destinationImageUrl || '',
+    notesSeed: backendOverview.notes_seed || backendOverview.notesSeed || [],
+    notes: backendOverview.notes || '',
+    travelDescription: backendOverview.travel_description || backendOverview.travelDescription || '',
+  };
+}
+
+function mapBackendTripToTrip(t: any): Trip {
+  const aiGenerated = t.constraints?.aiGenerated || {};
+  const mergedBudget = aiGenerated.budget || aiGenerated.budgetEntries
+    ? {
+        ...(aiGenerated.budget || {}),
+        entries: aiGenerated.budgetEntries || [],
+      }
+    : null;
+
+  return {
+    id: t.id,
+    userId: t.userId,
+    formData: {
+      destinations: t.destination ? [t.destination] : [],
+      startDate: t.startDate || '',
+      endDate: t.endDate || '',
+      travelers: t.travelersCount || 2,
+      budget: (t.budgetTier || 'mid') as BudgetLevel,
+      origin: t.origin || '',
+      preferences: {
+        interests: t.interests ? t.interests.split(',') : [],
+        pace: (t.pace || 'balanced') as 'relaxed' | 'balanced' | 'packed',
+        stayStyle: [],
+        dealBreakers: [],
+        accessibility: [],
+        dietary: [],
+        kidsFriendly: false,
+      },
+    },
+    flights: transformFlights(t.flights || [], t.selectedFlightId),
+    stays: transformStays(t.stays || [], t.selectedStayId),
+    plan: transformDays(t.days || []),
+    activities: transformActivities(aiGenerated.activities || []),
+    weather: transformWeather(aiGenerated.weather || []),
+    budget: transformBudget(mergedBudget),
+    overview: transformOverview(aiGenerated.overview),
+    selectedFlightId: t.selectedFlightId || null,
+    selectedStayId: t.selectedStayId || null,
+    savedItems: [],
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+    status: t.status,
+  };
 }
 
 // ------------------------------------------------------------------
@@ -134,12 +391,27 @@ function transformStays(backendStays: any[]): Stay[] {
 // ------------------------------------------------------------------
 
 export const useTripStore = create<TripState>((set, get) => ({
-  formData: { ...defaultFormData },
+  formData: initialFormData(),
 
   updateFormData: (partial) =>
     set((s) => ({ formData: { ...s.formData, ...partial } })),
 
-  resetForm: () => set({ formData: { ...defaultFormData } }),
+  resetForm: () => set({ formData: initialFormData() }),
+
+  clearRememberedDefaults: () => {
+    clearFormMemory();
+    set((s) => ({
+      formData: {
+        ...s.formData,
+        origin: defaultFormData.origin,
+        budget: defaultFormData.budget,
+        preferences: {
+          ...s.formData.preferences,
+          pace: defaultFormData.preferences.pace,
+        },
+      },
+    }));
+  },
 
   isGenerating: false,
   generationStatus: '',
@@ -155,6 +427,7 @@ export const useTripStore = create<TripState>((set, get) => ({
     set({ isGenerating: true, generationStatus: 'Creating your trip...' });
 
     try {
+      saveFormMemory(formData);
       const result = await tripAPI.createTrip(formData);
       if (!result.success) {
         throw new Error(result.message || 'Failed to create trip');
@@ -170,14 +443,20 @@ export const useTripStore = create<TripState>((set, get) => ({
         flights: [],
         stays: [],
         plan: [],
+        activities: [],
+        weather: [],
+        budget: null,
+        overview: null,
+        selectedFlightId: null,
+        selectedStayId: null,
         savedItems: [],
         createdAt: result.trip.createdAt || new Date().toISOString(),
         updatedAt: result.trip.updatedAt || new Date().toISOString(),
         status: 'generating',
       };
-      set({ currentTrip: trip });
+      set({ currentTrip: trip, focusFlightId: null, focusStayId: null });
 
-      // Open SSE stream (fire-and-forget – updates arrive asynchronously)
+      // Open SSE stream (fire-and-forget â€“ updates arrive asynchronously)
       const eventSource = await tripAPI.streamGeneration(tripId);
 
       eventSource.addEventListener('status', (e: MessageEvent) => {
@@ -198,9 +477,17 @@ export const useTripStore = create<TripState>((set, get) => ({
           if (section === 'plan') {
             updates.plan = transformDays(sectionData);
           } else if (section === 'stays') {
-            updates.stays = transformStays(sectionData);
+            updates.stays = transformStays(sectionData, s.currentTrip.selectedStayId);
           } else if (section === 'flights') {
-            updates.flights = transformFlights(sectionData);
+            updates.flights = transformFlights(sectionData, s.currentTrip.selectedFlightId);
+          } else if (section === 'activities') {
+            updates.activities = transformActivities(sectionData);
+          } else if (section === 'weather') {
+            updates.weather = transformWeather(sectionData);
+          } else if (section === 'budget') {
+            updates.budget = transformBudget(sectionData);
+          } else if (section === 'overview') {
+            updates.overview = transformOverview(sectionData);
           }
 
           return {
@@ -226,7 +513,9 @@ export const useTripStore = create<TripState>((set, get) => ({
           set((s) => ({
             isGenerating: false,
             generationStatus: '',
-            currentTrip: s.currentTrip ? { ...s.currentTrip, status: 'error' } : null,
+            currentTrip: s.currentTrip
+              ? { ...s.currentTrip, status: data?.partial ? 'ready' : 'error' }
+              : null,
           }));
         } catch {
           console.error('SSE connection error');
@@ -239,11 +528,21 @@ export const useTripStore = create<TripState>((set, get) => ({
         set((s) => ({
           isGenerating: false,
           generationStatus: '',
-          currentTrip: s.currentTrip ? { ...s.currentTrip, status: 'error' } : null,
+          currentTrip: s.currentTrip
+            ? {
+                ...s.currentTrip,
+                status:
+                  s.currentTrip.plan.length > 0 &&
+                  s.currentTrip.flights.length > 0 &&
+                  s.currentTrip.stays.length > 0
+                    ? 'ready'
+                    : 'error',
+              }
+            : null,
         }));
       };
 
-      // Resolve immediately – SSE events will continue updating state
+      // Resolve immediately â€“ SSE events will continue updating state
     } catch (err: any) {
       console.error('Trip creation failed:', err);
       set({
@@ -260,46 +559,21 @@ export const useTripStore = create<TripState>((set, get) => ({
     try {
       const result = await tripAPI.getTrip(tripId);
       if (!result.success || !result.trip) return;
-
-      const t = result.trip;
-      const trip: Trip = {
-        id: t.id,
-        userId: t.userId,
-        formData: {
-          destinations: t.destination ? [t.destination] : [],
-          startDate: t.startDate || '',
-          endDate: t.endDate || '',
-          travelers: t.travelersCount || 2,
-          budget: (t.budgetTier || 'mid') as BudgetLevel,
-          origin: t.origin || '',
-          preferences: {
-            interests: t.interests ? t.interests.split(',') : [],
-            pace: (t.pace || 'balanced') as 'relaxed' | 'balanced' | 'packed',
-            stayStyle: [],
-            dealBreakers: [],
-            accessibility: [],
-            dietary: [],
-            kidsFriendly: false,
-          },
-        },
-        flights: transformFlights(t.flights || []),
-        stays: transformStays(t.stays || []),
-        plan: transformDays(t.days || []),
-        savedItems: [],
-        createdAt: t.createdAt,
-        updatedAt: t.updatedAt,
-        status: t.status,
-      };
-      set({ currentTrip: trip });
+      const trip = mapBackendTripToTrip(result.trip);
+      set({ currentTrip: trip, focusFlightId: null, focusStayId: null });
     } catch (err) {
       console.error('Failed to load trip:', err);
     }
   },
 
-  activeTab: 'plan',
+  activeTab: 'overview',
   setActiveTab: (tab) => set({ activeTab: tab }),
   selectedDay: null,
   setSelectedDay: (day) => set({ selectedDay: day }),
+  focusFlightId: null,
+  setFocusFlightId: (flightId) => set({ focusFlightId: flightId }),
+  focusStayId: null,
+  setFocusStayId: (stayId) => set({ focusStayId: stayId }),
 
   toggleFlightSaved: (flightId) =>
     set((s) => {
@@ -331,6 +605,119 @@ export const useTripStore = create<TripState>((set, get) => ({
       return { currentTrip: { ...s.currentTrip, plan } };
     }),
 
+  selectPrimaryFlight: async (flightId) => {
+    const { currentTrip, loadTrip } = get();
+    if (!currentTrip) return;
+    await tripAPI.selectPrimaryFlight(currentTrip.id, flightId);
+    await loadTrip(currentTrip.id);
+  },
+
+  selectPrimaryStay: async (stayId) => {
+    const { currentTrip, loadTrip } = get();
+    if (!currentTrip) return;
+    await tripAPI.selectPrimaryStay(currentTrip.id, stayId);
+    await loadTrip(currentTrip.id);
+  },
+
+  addSuggestedActivityToDay: async (activityId, dayNumber) => {
+    const { currentTrip, loadTrip } = get();
+    if (!currentTrip) return;
+    const result = await tripAPI.addActivityToDay(currentTrip.id, activityId, dayNumber);
+    if (result?.success && result?.trip) {
+      const mapped = mapBackendTripToTrip(result.trip);
+      set({ currentTrip: mapped });
+      return;
+    }
+    await loadTrip(currentTrip.id);
+  },
+
+  generateMoreActivities: async (category) => {
+    const { currentTrip, loadTrip } = get();
+    if (!currentTrip) return;
+    await tripAPI.generateMoreActivities(currentTrip.id, category);
+    await loadTrip(currentTrip.id);
+  },
+
+  updateSuggestedActivityStatus: async (activityId, status) => {
+    const { currentTrip, loadTrip } = get();
+    if (!currentTrip) return;
+    await tripAPI.updateActivityStatus(currentTrip.id, activityId, status);
+    await loadTrip(currentTrip.id);
+  },
+
+  returnPlanItemToBucket: async (itemId) => {
+    const { currentTrip, loadTrip } = get();
+    if (!currentTrip) return;
+    await tripAPI.returnPlanItemToBucket(currentTrip.id, itemId);
+    await loadTrip(currentTrip.id);
+  },
+
+  autofillDay: async (dayNumber, limit = 3) => {
+    const { currentTrip, loadTrip } = get();
+    if (!currentTrip) return;
+    const result = await tripAPI.autofillDay(currentTrip.id, dayNumber, limit);
+    if (result?.success && result?.trip) {
+      const mapped = mapBackendTripToTrip(result.trip);
+      set({ currentTrip: mapped });
+      return;
+    }
+    await loadTrip(currentTrip.id);
+  },
+
+  refreshWeather: async () => {
+    const { currentTrip, loadTrip } = get();
+    if (!currentTrip) return;
+    await tripAPI.refreshWeather(currentTrip.id);
+    await loadTrip(currentTrip.id);
+  },
+
+  saveTripNotes: async (notes) => {
+    const { currentTrip, loadTrip } = get();
+    if (!currentTrip) return;
+    await tripAPI.updateNotes(currentTrip.id, notes);
+    await loadTrip(currentTrip.id);
+  },
+
+  saveOverviewImage: async (imageUrl) => {
+    const { currentTrip, loadTrip } = get();
+    if (!currentTrip) return;
+    await tripAPI.updateOverviewImage(currentTrip.id, imageUrl);
+    await loadTrip(currentTrip.id);
+  },
+
+  saveOverviewDescription: async (description) => {
+    const { currentTrip, loadTrip } = get();
+    if (!currentTrip) return;
+    await tripAPI.updateOverviewDescription(currentTrip.id, description);
+    await loadTrip(currentTrip.id);
+  },
+
+  addBudgetEntry: async (payload) => {
+    const { currentTrip, loadTrip } = get();
+    if (!currentTrip) return;
+    await tripAPI.addBudgetEntry(currentTrip.id, payload);
+    await loadTrip(currentTrip.id);
+  },
+
+  updateBudgetEntry: async (entryId, payload) => {
+    const { currentTrip, loadTrip } = get();
+    if (!currentTrip) return;
+    await tripAPI.updateBudgetEntry(currentTrip.id, entryId, payload);
+    await loadTrip(currentTrip.id);
+  },
+
+  deleteBudgetEntry: async (entryId) => {
+    const { currentTrip, loadTrip } = get();
+    if (!currentTrip) return;
+    const result = await tripAPI.deleteBudgetEntry(currentTrip.id, entryId);
+    if (result?.success && result?.trip) {
+      const mapped = mapBackendTripToTrip(result.trip);
+      set({ currentTrip: mapped });
+      return;
+    }
+    await loadTrip(currentTrip.id);
+  },
+
   updatedSections: {},
   markSectionUpdated: (section) =>
     set((s) => ({
@@ -340,17 +727,26 @@ export const useTripStore = create<TripState>((set, get) => ({
   // -----------------------------------------------------------------
   // Apply section data from a chat edit response
   // -----------------------------------------------------------------
-  applySectionData: (section: string, data: unknown[]) => {
+  applySectionData: (section: string, data: unknown) => {
     set((s) => {
       if (!s.currentTrip) return {};
       const updates: Partial<Trip> = {};
+      const listData = Array.isArray(data) ? data : [];
 
       if (section === 'plan') {
-        updates.plan = transformDays(data);
+        updates.plan = transformDays(listData);
       } else if (section === 'stays') {
-        updates.stays = transformStays(data);
+        updates.stays = transformStays(listData, s.currentTrip.selectedStayId);
       } else if (section === 'flights') {
-        updates.flights = transformFlights(data);
+        updates.flights = transformFlights(listData, s.currentTrip.selectedFlightId);
+      } else if (section === 'activities') {
+        updates.activities = transformActivities(listData);
+      } else if (section === 'weather') {
+        updates.weather = transformWeather(listData);
+      } else if (section === 'budget') {
+        updates.budget = transformBudget(data);
+      } else if (section === 'overview') {
+        updates.overview = transformOverview(data);
       }
 
       return {

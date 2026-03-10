@@ -29,6 +29,12 @@ export interface Trip {
   flights: Flight[];
   stays: Stay[];
   plan: PlanDay[];
+  activities: SuggestedActivity[];
+  weather: WeatherDay[];
+  budget: BudgetHint | null;
+  overview: OverviewData | null;
+  selectedFlightId?: string | null;
+  selectedStayId?: string | null;
   savedItems: SavedItem[];
   createdAt: string;
   updatedAt: string;
@@ -47,6 +53,7 @@ export interface Flight {
   priceRange: string;
   bookingUrl: string;
   saved: boolean;
+  isSelected?: boolean;
 }
 
 export interface Stay {
@@ -54,6 +61,12 @@ export interface Stay {
   name: string;
   type: string;
   neighborhood: string;
+  lat?: number | null;
+  lng?: number | null;
+  mapsUrl?: string;
+  placeId?: string;
+  photoReference?: string;
+  photoName?: string;
   priceRange: string;
   rating: number;
   reviewCount: number;
@@ -62,6 +75,7 @@ export interface Stay {
   bookingUrl: string;
   amenities: string[];
   saved: boolean;
+  isSelected?: boolean;
 }
 
 export interface PlanDay {
@@ -115,6 +129,21 @@ export interface WeatherHourly {
   weatherMain: string;
   weatherDesc: string;
   icon: string;
+export interface SuggestedActivity {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  durationMinutes: number | null;
+  costHint: string;
+  placeQuery: string;
+  mapsUrl?: string;
+  imageQuery?: string;
+  locationName?: string;
+  address?: string;
+  lat?: number | null;
+  lng?: number | null;
+  status?: 'suggested' | 'saved' | 'dismissed';
 }
 
 export interface WeatherDay {
@@ -138,6 +167,52 @@ export interface WeatherData {
   lon: number;
   days: WeatherDay[];
   fetchedAt: number;
+  highTempC: number | null;
+  lowTempC: number | null;
+  condition: string;
+  icon: string;
+  humidityPct: number | null;
+}
+
+export interface BudgetCategoryHint {
+  category: string;
+  estimatedAmount: number | null;
+  note: string;
+}
+
+export interface BudgetHint {
+  currency: string;
+  totalEstimated: number | null;
+  categories: BudgetCategoryHint[];
+  entries: BudgetEntry[];
+  summary: BudgetSummary;
+}
+
+export interface BudgetEntry {
+  id: string;
+  category: string;
+  amount: number;
+  currency: string;
+  date: string;
+  note: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface BudgetSummary {
+  estimatedTotal: number | null;
+  actualTotal: number;
+  delta: number | null;
+  currency: string;
+}
+
+export interface OverviewData {
+  summary: string;
+  destinationImagePrompt: string;
+  destinationImageUrl: string;
+  notesSeed: string[];
+  notes?: string;
+  travelDescription?: string;
 }
 
 /* ─── Chat ─── */
@@ -168,3 +243,4 @@ export interface User {
 
 /* ─── UI State ─── */
 export type TabId = 'plan' | 'flights' | 'stays' | 'weather' | 'map' | 'profile';
+export type TabId = 'overview' | 'plan' | 'activities' | 'flights' | 'stays' | 'budget' | 'weather' | 'map' | 'profile';

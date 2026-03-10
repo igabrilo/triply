@@ -79,6 +79,62 @@ class GeneratedFlights(BaseModel):
 
 
 # ------------------------------------------------------------------
+# Activities bucket suggestions
+# ------------------------------------------------------------------
+class ActivitySuggestionSchema(BaseModel):
+    title: str
+    description: Optional[str] = None
+    category: Optional[str] = Field(None, description="attractions | food | nightlife | outdoors | shopping | custom")
+    duration_minutes: Optional[int] = None
+    cost_hint: Optional[str] = None
+    place_query: Optional[str] = Field(None, description="Search query for geocoding")
+
+
+class GeneratedActivities(BaseModel):
+    activities: list[ActivitySuggestionSchema]
+
+
+# ------------------------------------------------------------------
+# Weather
+# ------------------------------------------------------------------
+class WeatherDaySchema(BaseModel):
+    date: str = Field(description="YYYY-MM-DD")
+    high_temp_c: Optional[int] = None
+    low_temp_c: Optional[int] = None
+    condition: Optional[str] = None
+    icon: Optional[str] = None
+    humidity_pct: Optional[int] = None
+
+
+class GeneratedWeather(BaseModel):
+    days: list[WeatherDaySchema]
+
+
+# ------------------------------------------------------------------
+# Budget hints
+# ------------------------------------------------------------------
+class BudgetCategoryHintSchema(BaseModel):
+    category: str = Field(description="transport | accommodation | food | activities | shopping | other")
+    estimated_amount: Optional[int] = None
+    note: Optional[str] = None
+
+
+class GeneratedBudget(BaseModel):
+    currency: Optional[str] = None
+    total_estimated: Optional[int] = None
+    categories: list[BudgetCategoryHintSchema]
+
+
+# ------------------------------------------------------------------
+# Overview summary + hero image prompt
+# ------------------------------------------------------------------
+class GeneratedOverview(BaseModel):
+    summary: str
+    destination_image_prompt: str = Field(description="A cinematic, realistic destination photo prompt")
+    notes_seed: list[str]
+
+
+# ------------------------------------------------------------------
 # Full trip generation (combines all three)
 # ------------------------------------------------------------------
 class GeneratedTrip(BaseModel):

@@ -49,6 +49,8 @@ class Trip(db.Model):
 
     # --- Serialization ---
     def to_dict(self, include_details=False):
+        ai_generated = self.constraints.get('aiGenerated', {}) if isinstance(self.constraints, dict) else {}
+        selection = ai_generated.get('selection', {}) if isinstance(ai_generated, dict) else {}
         data = {
             'id': str(self.id),
             'userId': str(self.user_id),
@@ -62,6 +64,8 @@ class Trip(db.Model):
             'pace': self.pace,
             'interests': self.interests_array,
             'constraints': self.constraints,
+            'selectedFlightId': selection.get('selectedFlightId'),
+            'selectedStayId': selection.get('selectedStayId'),
             'mustDo': self.must_do,
             'status': self.status,
             'createdAt': self.created_at.isoformat() if self.created_at else None,

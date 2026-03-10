@@ -1,5 +1,11 @@
 import logging
-from datetime import date
+import uuid
+from copy import deepcopy
+from datetime import date, datetime, timezone
+import hashlib
+import math
+import re
+import unicodedata
 
 from app import db
 from app.models.trip import Trip
@@ -8,8 +14,205 @@ from app.models.plan_item import PlanItem
 from app.models.flight_option import FlightOption
 from app.models.stay_option import StayOption
 from app.models.trip_generation_run import TripGenerationRun
+from sqlalchemy.orm.attributes import flag_modified
 
 logger = logging.getLogger(__name__)
+
+
+_DESTINATION_COORD_FALLBACKS: dict[str, tuple[float, float]] = {
+    'tokyo': (35.6764, 139.6500),
+    'paris': (48.8566, 2.3522),
+    'rome': (41.9028, 12.4964),
+    'vienna': (48.2082, 16.3738),
+    'london': (51.5072, -0.1276),
+    'barcelona': (41.3874, 2.1686),
+    'amsterdam': (52.3676, 4.9041),
+    'budapest': (47.4979, 19.0402),
+    'prague': (50.0755, 14.4378),
+    'new york': (40.7128, -74.0060),
+    'berlin': (52.5200, 13.4050),
+    'munich': (48.1351, 11.5820),
+    'naples': (40.8518, 14.2681),
+}
+
+_DESTINATION_ALIAS_KEYS: dict[str, str] = {
+    'tokio': 'tokyo',
+    'bec': 'vienna',
+    'wien': 'vienna',
+    'rim': 'rome',
+    'pariz': 'paris',
+    'napulj': 'naples',
+    'munchen': 'munich',
+    'muenchen': 'munich',
+    'nyc': 'new york',
+}
+
+
+def _constraints_snapshot(trip: Trip) -> dict:
+    base = trip.constraints if isinstance(trip.constraints, dict) else {}
+    return deepcopy(base)
+
+
+def _commit_constraints(trip: Trip, constraints: dict) -> None:
+    trip.constraints = constraints
+    flag_modified(trip, 'constraints')
+    db.session.commit()
+
+
+def _dedupe_text_values(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        normalized = re.sub(r'\s+', ' ', str(raw or '').strip())
+        if not normalized:
+            continue
+        key = normalized.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(normalized)
+    return deduped
+
+
+def _match_text(value: str) -> str:
+    return re.sub(r'[^a-z0-9]+', ' ', str(value or '').lower()).strip()
+
+
+def _ascii_fold(value: str) -> str:
+    return unicodedata.normalize('NFKD', str(value or '')).encode('ascii', 'ignore').decode('ascii')
+
+
+def _destination_match_tokens(destination_hint: str) -> set[str]:
+    primary = re.sub(r'\s+', ' ', str(destination_hint or '').strip()).split(',', 1)[0].strip()
+    if not primary:
+        return set()
+    folded = _ascii_fold(primary).lower()
+    primary_match = _match_text(folded)
+    if not primary_match:
+        return set()
+    canonical = _DESTINATION_ALIAS_KEYS.get(primary_match, primary_match)
+    return {primary_match, canonical}
+
+
+def _geo_matches_destination(destination_hint: str, geo: dict, query: str) -> bool:
+    tokens = _destination_match_tokens(destination_hint)
+    if not tokens:
+        return True
+    geo_match_text = _match_text(f"{geo.get('location_name') or ''} {geo.get('address') or ''}")
+    query_match_text = _match_text(query)
+    for token in tokens:
+        if token and token in geo_match_text:
+            return True
+    # Allow plain destination query as final fallback.
+    for token in tokens:
+        if token and query_match_text == token:
+            return True
+    return False
+
+
+def _spread_fallback_coords(base_lat: float, base_lng: float, seed_text: str) -> tuple[float, float]:
+    seed = str(seed_text or 'activity').encode('utf-8', errors='ignore')
+    digest = hashlib.sha1(seed).hexdigest()
+    angle_ratio = int(digest[:8], 16) / float(0xFFFFFFFF)
+    radius_ratio = int(digest[8:16], 16) / float(0xFFFFFFFF)
+    angle = angle_ratio * 2 * math.pi
+    radius_deg = 0.002 + (radius_ratio * 0.010)  # ~0.2km to ~1.2km radial spread
+    lat_offset = radius_deg * math.cos(angle)
+    cos_lat = max(0.25, math.cos(math.radians(base_lat)))
+    lng_offset = (radius_deg * math.sin(angle)) / cos_lat
+    return round(base_lat + lat_offset, 6), round(base_lng + lng_offset, 6)
+
+
+def _destination_fallback_coords(destination_hint: str) -> tuple[float, float] | None:
+    tokens = _destination_match_tokens(destination_hint)
+    if not tokens:
+        return None
+    for token in tokens:
+        coords = _DESTINATION_COORD_FALLBACKS.get(token)
+        if coords:
+            return coords
+    return None
+
+
+def _build_activity_geocode_queries(activity: dict, destination_hint: str) -> list[str]:
+    base = _dedupe_text_values([
+        str(activity.get('place_query') or ''),
+        str(activity.get('location_name') or ''),
+        str(activity.get('address') or ''),
+        str(activity.get('title') or ''),
+    ])
+    destination = re.sub(r'\s+', ' ', str(destination_hint or '').strip())
+    if not destination:
+        return base
+
+    destination_lower = destination.lower()
+    combined: list[str] = []
+    for query in base:
+        if destination_lower in query.lower():
+            combined.append(query)
+        else:
+            combined.append(f"{query}, {destination}")
+    return _dedupe_text_values(combined + base + [destination])
+
+
+def _resolve_activity_geo_fields(activity: dict, destination_hint: str):
+    maps_url = activity.get('maps_url')
+    location_name = activity.get('location_name') or activity.get('place_query')
+    address = activity.get('address')
+    lat = activity.get('lat')
+    lng = activity.get('lng')
+
+    needs_geocoding = (
+        not maps_url
+        or lat is None
+        or lng is None
+        or not location_name
+        or not address
+    )
+    if not needs_geocoding:
+        return maps_url, location_name, address, lat, lng
+
+    try:
+        from app.services.geocoding_service import geocode_place
+    except Exception:
+        return maps_url, location_name, address, lat, lng
+
+    for query in _build_activity_geocode_queries(activity, destination_hint):
+        try:
+            geo = geocode_place(query)
+        except Exception:
+            continue
+        if not geo:
+            continue
+        if not _geo_matches_destination(destination_hint, geo, query):
+            continue
+        maps_url = maps_url or geo.get('maps_url')
+        location_name = location_name or geo.get('location_name')
+        address = address or geo.get('address')
+        if lat is None and geo.get('lat') is not None:
+            lat = geo.get('lat')
+        if lng is None and geo.get('lng') is not None:
+            lng = geo.get('lng')
+        if maps_url and location_name and address and lat is not None and lng is not None:
+            break
+
+    if (lat is None or lng is None) and destination_hint:
+        fallback = _destination_fallback_coords(destination_hint)
+        if fallback:
+            spread_seed = (
+                str(activity.get('id') or '')
+                or str(activity.get('place_query') or '')
+                or str(activity.get('title') or '')
+                or str(activity.get('location_name') or '')
+                or 'activity'
+            )
+            spread_lat, spread_lng = _spread_fallback_coords(fallback[0], fallback[1], spread_seed)
+            lat = spread_lat if lat is None else lat
+            lng = spread_lng if lng is None else lng
+            location_name = location_name or destination_hint
+            maps_url = maps_url or f"https://www.google.com/maps/search/?api=1&query={lat},{lng}"
+
+    return maps_url, location_name, address, lat, lng
 
 
 class TripService:
@@ -87,19 +290,16 @@ class TripService:
     # ------------------------------------------------------------------
     @staticmethod
     def persist_plan(trip: Trip, plan_data) -> None:
-        """Save AI-generated plan to DB.  Accepts a GeneratedPlan schema object."""
-        from app.services.geocoding_service import enrich_plan_items
+        """Create plan days from AI output, but keep days empty by default."""
 
         days_raw = [
             {
                 'dayIndex': d.day_index,
                 'title': d.title,
-                'items': [item.model_dump() for item in d.items],
+                'items': [],
             }
             for d in plan_data.days
         ]
-
-        days_raw = enrich_plan_items(days_raw)
 
         # Calculate actual dates from trip start_date
         for day_dict in days_raw:
@@ -134,6 +334,13 @@ class TripService:
                     'stayType': s.get('stay_type'),
                     'priceRange': s.get('price_range'),
                     'amenities': s.get('amenities', []),
+                    'mapsUrl': s.get('maps_url'),
+                    'imageQuery': s.get('image_query'),
+                    'placeId': s.get('place_id'),
+                    'photoReference': s.get('photo_reference'),
+                    'photoName': s.get('photo_name'),
+                    'locationName': s.get('location_name'),
+                    'address': s.get('address'),
                 },
             })
 
@@ -181,6 +388,249 @@ class TripService:
         run.error_message = error_message
         db.session.commit()
 
+    @staticmethod
+    def persist_generated_section(trip: Trip, section: str, payload) -> None:
+        """Persist non-normalized generated sections in trip.constraints.aiGenerated."""
+        constraints = _constraints_snapshot(trip)
+        ai_generated = constraints.get('aiGenerated', {})
+        ai_generated[section] = payload
+        constraints['aiGenerated'] = ai_generated
+        _commit_constraints(trip, constraints)
+
+    @staticmethod
+    def append_generated_activities(trip: Trip, new_activities: list[dict]) -> list[dict]:
+        """Append new activities to aiGenerated bucket with de-duplication and stable ids."""
+        constraints = _constraints_snapshot(trip)
+        ai_generated = constraints.get('aiGenerated', {})
+        existing = ai_generated.get('activities', [])
+        if not isinstance(existing, list):
+            existing = []
+
+        existing_keys = {
+            (
+                (a.get('title') or '').strip().lower(),
+                (a.get('place_query') or '').strip().lower(),
+            )
+            for a in existing
+        }
+
+        max_id_num = -1
+        for a in existing:
+            aid = str(a.get('id', ''))
+            if aid.startswith('act_'):
+                try:
+                    max_id_num = max(max_id_num, int(aid.split('_', 1)[1]))
+                except ValueError:
+                    pass
+
+        appended: list[dict] = []
+        for raw in new_activities:
+            key = (
+                (raw.get('title') or '').strip().lower(),
+                (raw.get('place_query') or '').strip().lower(),
+            )
+            if key in existing_keys:
+                continue
+            max_id_num += 1
+            item = {**raw, 'id': f'act_{max_id_num}'}
+            existing.append(item)
+            existing_keys.add(key)
+            appended.append(item)
+
+        ai_generated['activities'] = existing
+        constraints['aiGenerated'] = ai_generated
+        _commit_constraints(trip, constraints)
+        return appended
+
+    @staticmethod
+    def update_suggested_activity_status(trip: Trip, activity_id: str, status: str) -> dict:
+        allowed = {'suggested', 'saved', 'dismissed'}
+        if status not in allowed:
+            raise ValueError('Invalid status')
+        constraints = _constraints_snapshot(trip)
+        if not isinstance(constraints, dict):
+            raise ValueError('No generated activities available')
+
+        ai_generated = constraints.get('aiGenerated', {})
+        activities = ai_generated.get('activities', [])
+        if not isinstance(activities, list):
+            raise ValueError('No generated activities available')
+
+        updated = None
+        for activity in activities:
+            if str(activity.get('id')) == str(activity_id):
+                activity['status'] = status
+                updated = activity
+                break
+
+        if not updated:
+            raise ValueError('Activity not found')
+
+        ai_generated['activities'] = activities
+        constraints['aiGenerated'] = ai_generated
+        _commit_constraints(trip, constraints)
+        return updated
+
+    @staticmethod
+    def update_trip_notes(trip: Trip, notes: str) -> None:
+        constraints = _constraints_snapshot(trip)
+        ai_generated = constraints.get('aiGenerated', {})
+        overview = ai_generated.get('overview', {})
+        if not isinstance(overview, dict):
+            overview = {}
+        overview['notes'] = notes or ''
+        ai_generated['overview'] = overview
+        constraints['aiGenerated'] = ai_generated
+        _commit_constraints(trip, constraints)
+
+    @staticmethod
+    def update_overview_image(trip: Trip, image_url: str) -> None:
+        constraints = _constraints_snapshot(trip)
+        ai_generated = constraints.get('aiGenerated', {})
+        overview = ai_generated.get('overview', {})
+        if not isinstance(overview, dict):
+            overview = {}
+
+        overview['destination_image_url'] = image_url or ''
+        ai_generated['overview'] = overview
+        constraints['aiGenerated'] = ai_generated
+        _commit_constraints(trip, constraints)
+
+    @staticmethod
+    def update_overview_description(trip: Trip, description: str) -> None:
+        constraints = _constraints_snapshot(trip)
+        ai_generated = constraints.get('aiGenerated', {})
+        overview = ai_generated.get('overview', {})
+        if not isinstance(overview, dict):
+            overview = {}
+
+        overview['travel_description'] = description or ''
+        ai_generated['overview'] = overview
+        constraints['aiGenerated'] = ai_generated
+        _commit_constraints(trip, constraints)
+
+    @staticmethod
+    def get_budget_data(trip: Trip) -> dict:
+        constraints = trip.constraints if isinstance(trip.constraints, dict) else {}
+        ai_generated = constraints.get('aiGenerated', {})
+        budget = ai_generated.get('budget', {})
+        entries = ai_generated.get('budgetEntries', [])
+
+        if not isinstance(budget, dict):
+            budget = {}
+        if not isinstance(entries, list):
+            entries = []
+
+        currency = budget.get('currency') or 'EUR'
+        total_estimated = budget.get('total_estimated', budget.get('totalEstimated'))
+
+        total_actual = 0.0
+        for entry in entries:
+            try:
+                total_actual += float(entry.get('amount', 0) or 0)
+            except (TypeError, ValueError):
+                continue
+
+        delta = None
+        if total_estimated is not None:
+            try:
+                delta = float(total_estimated) - total_actual
+            except (TypeError, ValueError):
+                delta = None
+
+        return {
+            'currency': currency,
+            'totalEstimated': total_estimated,
+            'categories': budget.get('categories', []),
+            'entries': entries,
+            'summary': {
+                'estimatedTotal': total_estimated,
+                'actualTotal': round(total_actual, 2),
+                'delta': round(delta, 2) if delta is not None else None,
+                'currency': currency,
+            },
+        }
+
+    @staticmethod
+    def add_budget_entry(trip: Trip, payload: dict) -> dict:
+        constraints = _constraints_snapshot(trip)
+        ai_generated = constraints.get('aiGenerated', {})
+        entries = ai_generated.get('budgetEntries', [])
+        budget = ai_generated.get('budget', {})
+
+        if not isinstance(entries, list):
+            entries = []
+        if not isinstance(budget, dict):
+            budget = {}
+
+        currency = payload.get('currency') or budget.get('currency') or 'EUR'
+        amount = float(payload.get('amount', 0))
+        entry = {
+            'id': str(uuid.uuid4()),
+            'category': str(payload.get('category') or 'other').strip().lower(),
+            'amount': round(amount, 2),
+            'currency': currency,
+            'date': payload.get('date'),
+            'note': str(payload.get('note') or '').strip(),
+            'createdAt': datetime.now(timezone.utc).isoformat(),
+        }
+        entries.append(entry)
+
+        ai_generated['budgetEntries'] = entries
+        constraints['aiGenerated'] = ai_generated
+        _commit_constraints(trip, constraints)
+        return entry
+
+    @staticmethod
+    def delete_budget_entry(trip: Trip, entry_id: str) -> bool:
+        constraints = _constraints_snapshot(trip)
+        ai_generated = constraints.get('aiGenerated', {})
+        entries = ai_generated.get('budgetEntries', [])
+        if not isinstance(entries, list):
+            return False
+
+        filtered = [entry for entry in entries if str(entry.get('id')) != str(entry_id)]
+        if len(filtered) == len(entries):
+            return False
+
+        ai_generated['budgetEntries'] = filtered
+        constraints['aiGenerated'] = ai_generated
+        _commit_constraints(trip, constraints)
+        return True
+
+    @staticmethod
+    def update_budget_entry(trip: Trip, entry_id: str, payload: dict) -> dict | None:
+        constraints = _constraints_snapshot(trip)
+        ai_generated = constraints.get('aiGenerated', {})
+        entries = ai_generated.get('budgetEntries', [])
+        if not isinstance(entries, list):
+            return None
+
+        target = None
+        for entry in entries:
+            if str(entry.get('id')) == str(entry_id):
+                target = entry
+                break
+        if not target:
+            return None
+
+        if 'category' in payload and payload.get('category'):
+            target['category'] = str(payload.get('category')).strip().lower()
+        if 'amount' in payload:
+            target['amount'] = round(float(payload.get('amount')), 2)
+        if 'currency' in payload and payload.get('currency'):
+            target['currency'] = str(payload.get('currency')).strip().upper()
+        if 'date' in payload and payload.get('date'):
+            target['date'] = payload.get('date')
+        if 'note' in payload:
+            target['note'] = str(payload.get('note') or '').strip()
+        target['updatedAt'] = datetime.now(timezone.utc).isoformat()
+
+        ai_generated['budgetEntries'] = entries
+        constraints['aiGenerated'] = ai_generated
+        _commit_constraints(trip, constraints)
+        return target
+
     # ------------------------------------------------------------------
     # Read
     # ------------------------------------------------------------------
@@ -193,6 +643,226 @@ class TripService:
     def get_trip(trip_id: str, user_id: str):
         """Get a single trip (ownership check)."""
         return Trip.query.filter_by(id=trip_id, user_id=user_id).first()
+
+    @staticmethod
+    def select_primary_flight(trip: Trip, flight_id: str) -> None:
+        selected = None
+        for f in trip.flight_options:
+            is_match = str(f.id) == str(flight_id)
+            f.saved = is_match
+            if is_match:
+                selected = str(f.id)
+        if not selected:
+            raise ValueError('Flight not found')
+        TripService.persist_generated_section(trip, 'selection', {
+            **(trip.constraints.get('aiGenerated', {}).get('selection', {}) if isinstance(trip.constraints, dict) else {}),
+            'selectedFlightId': selected,
+            'selectedStayId': (
+                trip.constraints.get('aiGenerated', {}).get('selection', {}).get('selectedStayId')
+                if isinstance(trip.constraints, dict) else None
+            ),
+        })
+        db.session.commit()
+
+    @staticmethod
+    def select_primary_stay(trip: Trip, stay_id: str) -> None:
+        selected = None
+        for s in trip.stay_options:
+            is_match = str(s.id) == str(stay_id)
+            s.saved = is_match
+            if is_match:
+                selected = str(s.id)
+        if not selected:
+            raise ValueError('Stay not found')
+        TripService.persist_generated_section(trip, 'selection', {
+            **(trip.constraints.get('aiGenerated', {}).get('selection', {}) if isinstance(trip.constraints, dict) else {}),
+            'selectedStayId': selected,
+            'selectedFlightId': (
+                trip.constraints.get('aiGenerated', {}).get('selection', {}).get('selectedFlightId')
+                if isinstance(trip.constraints, dict) else None
+            ),
+        })
+        db.session.commit()
+
+    @staticmethod
+    def add_suggested_activity_to_day(trip: Trip, activity_id: str, day_number: int) -> None:
+        constraints = _constraints_snapshot(trip)
+        if not isinstance(constraints, dict):
+            raise ValueError('No generated activities available')
+        ai_generated = constraints.get('aiGenerated', {})
+        activities = ai_generated.get('activities', [])
+        if not isinstance(activities, list):
+            raise ValueError('No generated activities available')
+
+        activity = None
+        remaining = []
+        for item in activities:
+            item_id = item.get('id')
+            if not item_id:
+                item_id = f"act_{len(remaining)}"
+                item['id'] = item_id
+            if str(item_id) == str(activity_id):
+                activity = item
+            else:
+                remaining.append(item)
+        if not activity:
+            raise ValueError('Activity not found')
+
+        day = _resolve_trip_day(trip, day_number)
+        if not day:
+            raise ValueError('Day not found')
+
+        destination_hint = str(trip.destination or '').strip()
+        maps_url, location_name, address, lat, lng = _resolve_activity_geo_fields(
+            activity,
+            destination_hint,
+        )
+
+        sort_order = len(day.plan_items)
+        db.session.add(PlanItem(
+            trip_day=day,
+            title=activity.get('title', 'Activity'),
+            description=activity.get('description'),
+            category=activity.get('category'),
+            duration_minutes=activity.get('duration_minutes'),
+            cost_hint=activity.get('cost_hint'),
+            location_name=location_name,
+            address=address,
+            lat=lat,
+            lng=lng,
+            maps_url=maps_url,
+            sort_order=sort_order,
+            status='suggested',
+        ))
+
+        ai_generated['activities'] = remaining
+        constraints['aiGenerated'] = ai_generated
+        trip.constraints = constraints
+        flag_modified(trip, 'constraints')
+        db.session.commit()
+
+    @staticmethod
+    def autofill_day_from_bucket(trip: Trip, day_number: int, limit: int = 3) -> int:
+        """Add up to `limit` activities from bucket to a given day."""
+        constraints = _constraints_snapshot(trip)
+        if not isinstance(constraints, dict):
+            raise ValueError('No generated activities available')
+        ai_generated = constraints.get('aiGenerated', {})
+        activities = ai_generated.get('activities', [])
+        if not isinstance(activities, list) or not activities:
+            raise ValueError('No generated activities available')
+
+        normalized: list[dict] = []
+        for idx, activity in enumerate(activities):
+            if not isinstance(activity, dict):
+                continue
+            activity_id = activity.get('id')
+            if not activity_id:
+                activity_id = f'act_{idx}'
+                activity['id'] = activity_id
+            normalized.append(activity)
+
+        candidates = [
+            activity
+            for activity in normalized
+            if str(activity.get('status') or 'suggested').strip().lower() != 'dismissed'
+        ]
+        if not candidates:
+            raise ValueError('No available activities in bucket for autofill')
+
+        day = _resolve_trip_day(trip, day_number)
+        if not day:
+            raise ValueError('Day not found')
+
+        take = max(1, min(int(limit), 6))
+        picked = candidates[:take]
+        picked_ids = {str(activity.get('id')) for activity in picked}
+        remaining = [activity for activity in normalized if str(activity.get('id')) not in picked_ids]
+
+        base_sort = len(day.plan_items)
+        time_blocks = ['morning', 'afternoon', 'evening']
+        destination_hint = str(trip.destination or '').strip()
+        for idx, activity in enumerate(picked):
+            maps_url, location_name, address, lat, lng = _resolve_activity_geo_fields(
+                activity,
+                destination_hint,
+            )
+
+            db.session.add(PlanItem(
+                trip_day=day,
+                title=activity.get('title', 'Activity'),
+                description=activity.get('description'),
+                category=activity.get('category'),
+                time_block=time_blocks[idx] if idx < len(time_blocks) else None,
+                duration_minutes=activity.get('duration_minutes'),
+                cost_hint=activity.get('cost_hint'),
+                location_name=location_name,
+                address=address,
+                lat=lat,
+                lng=lng,
+                maps_url=maps_url,
+                sort_order=base_sort + idx,
+                status='suggested',
+            ))
+
+        ai_generated['activities'] = remaining
+        constraints['aiGenerated'] = ai_generated
+        trip.constraints = constraints
+        flag_modified(trip, 'constraints')
+        db.session.commit()
+        return len(picked)
+
+    @staticmethod
+    def return_plan_item_to_bucket(trip: Trip, item_id: str) -> None:
+        target_day = None
+        target_item = None
+        for day in trip.days:
+            for item in day.plan_items:
+                if str(item.id) == str(item_id):
+                    target_day = day
+                    target_item = item
+                    break
+            if target_item:
+                break
+        if not target_item or not target_day:
+            raise ValueError('Plan item not found')
+
+        constraints = _constraints_snapshot(trip)
+        ai_generated = constraints.get('aiGenerated', {})
+        activities = ai_generated.get('activities', [])
+        if not isinstance(activities, list):
+            activities = []
+
+        activities.append({
+            'id': str(target_item.id),
+            'title': target_item.title,
+            'description': target_item.description,
+            'category': target_item.category,
+            'duration_minutes': target_item.duration_minutes,
+            'cost_hint': target_item.cost_hint,
+            'place_query': target_item.location_name or target_item.address or target_item.title,
+            'location_name': target_item.location_name,
+            'address': target_item.address,
+            'lat': target_item.lat,
+            'lng': target_item.lng,
+            'maps_url': target_item.maps_url,
+            'image_query': target_item.location_name or target_item.title,
+        })
+        ai_generated['activities'] = activities
+        constraints['aiGenerated'] = ai_generated
+        trip.constraints = constraints
+        flag_modified(trip, 'constraints')
+
+        db.session.delete(target_item)
+        db.session.flush()
+        # Compact sort order after removal.
+        remaining_items = sorted(
+            [i for i in target_day.plan_items if str(i.id) != str(item_id)],
+            key=lambda i: i.sort_order,
+        )
+        for idx, item in enumerate(remaining_items):
+            item.sort_order = idx
+        db.session.commit()
 
     # ------------------------------------------------------------------
     # Update
@@ -260,6 +930,13 @@ class TripService:
                     'stayType': s.get('stay_type'),
                     'priceRange': s.get('price_range'),
                     'amenities': s.get('amenities', []),
+                    'mapsUrl': s.get('maps_url'),
+                    'imageQuery': s.get('image_query'),
+                    'placeId': s.get('place_id'),
+                    'photoReference': s.get('photo_reference'),
+                    'photoName': s.get('photo_name'),
+                    'locationName': s.get('location_name'),
+                    'address': s.get('address'),
                 },
             })
         _replace_stays(trip, formatted)
@@ -366,6 +1043,43 @@ def _persist_stay_options(trip, stays_list):
             why_it_fits=s.get('whyItFits'),
             details=s.get('details'),
         ))
+
+
+def _resolve_trip_day(trip: Trip, day_number: int) -> TripDay | None:
+    """Resolve day by tolerant mapping.
+
+    Prioritizes user-facing ordinal day selection (Day 1..N), while still
+    supporting direct `day_index` and legacy 0-based inputs.
+    """
+    try:
+        day_number = int(day_number)
+    except (TypeError, ValueError):
+        return None
+
+    ordered_days = sorted(trip.days, key=lambda d: d.day_index)
+    if not ordered_days:
+        return None
+
+    # 1-based fallback by ordinal position (most natural for users)
+    if 1 <= day_number <= len(ordered_days):
+        return ordered_days[day_number - 1]
+
+    # 0-based fallback by ordinal position
+    if 0 <= day_number < len(ordered_days):
+        return ordered_days[day_number]
+
+    direct = next((d for d in trip.days if d.day_index == day_number), None)
+    if direct:
+        return direct
+
+    plus_one = next((d for d in trip.days if d.day_index == day_number + 1), None)
+    if plus_one:
+        return plus_one
+    minus_one = next((d for d in trip.days if d.day_index == day_number - 1), None)
+    if minus_one:
+        return minus_one
+
+    return None
 
 
 def _replace_days(trip, days_list):
