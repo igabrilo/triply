@@ -28,10 +28,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
   openChat: (scope) => {
     const msgs: ChatMessage[] = [];
     if (scope) {
+      const label = scope.section.charAt(0).toUpperCase() + scope.section.slice(1);
+      const heading = `Editing: ${label}${scope.dayNumber ? ` — Day ${scope.dayNumber}` : ''}${scope.itemId ? ' (activity)' : ''}`;
+      const content = scope.contextSummary
+        ? `${heading}\n\n${scope.contextSummary}`
+        : heading;
       msgs.push({
         id: 'ctx_' + Date.now(),
         role: 'system',
-        content: `Editing scope: ${scope.section}${scope.dayNumber ? ` - Day ${scope.dayNumber}` : ''}${scope.itemId ? ` - Item ${scope.itemId}` : ''}`,
+        content,
         timestamp: new Date().toISOString(),
         editScope: scope,
       });
@@ -85,7 +90,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => ({ messages: [...s.messages, userMsg], isLoading: true }));
 
     try {
-      const result = await chatAPI.sendMessage(tripId, content, editScope || undefined);
+      // Prepend context summary so the AI knows which specific item is being edited
+      const enrichedContent = editScope?.contextSummary
+        ? `[User is editing the following item]\n${editScope.contextSummary}\n\n[User's instruction]\n${content}`
+        : content;
+      const result = await chatAPI.sendMessage(tripId, enrichedContent, editScope || undefined);
 
       if (!result.success) {
         if (result.error === 'edit_limit_reached') {

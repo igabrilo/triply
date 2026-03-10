@@ -13,6 +13,7 @@ import StaysSection from '@components/dashboard/StaysSection';
 import BudgetSection from '@components/dashboard/BudgetSection';
 import WeatherSection from '@components/dashboard/WeatherSection';
 import MapSection from '@components/dashboard/MapSection';
+import WeatherSection from '@components/dashboard/WeatherSection';
 import ProfileSection from '@components/dashboard/ProfileSection';
 import QuickTweaks from '@components/dashboard/QuickTweaks';
 import SavedItems from '@components/dashboard/SavedItems';
@@ -209,6 +210,7 @@ export default function Dashboard() {
     }
   };
 
+  const showSidebar = activeTab === 'plan' || activeTab === 'flights' || activeTab === 'stays' || activeTab === 'weather';
   const showSidebar = activeTab === 'plan' || activeTab === 'flights' || activeTab === 'stays' || activeTab === 'activities';
 
   return (

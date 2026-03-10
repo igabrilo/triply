@@ -2,6 +2,29 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Star, MessageSquare, Ticket, MapPin, Clock, Undo2 } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
 import { useChatStore } from '@/store/chatStore';
+import type { PlanDay, Activity } from '@/types';
+
+function buildPlanContext(plan: PlanDay[]): string {
+  return plan.map(d =>
+    `Day ${d.day}: ${d.title}\n` +
+    d.activities.map(a => `  - ${a.name} (${a.timeOfDay || 'TBD'}, ${a.duration || '?'})`).join('\n')
+  ).join('\n');
+}
+
+function buildDayContext(day: PlanDay): string {
+  return `Day ${day.day}: ${day.title}\nActivities:\n` +
+    day.activities.map(a =>
+      `  - ${a.name}${a.description ? ': ' + a.description : ''} (${a.timeOfDay || 'TBD'}, ${a.duration || '?'})`
+    ).join('\n');
+}
+
+function buildActivityContext(day: PlanDay, activity: Activity): string {
+  return `Day ${day.day}: ${day.title}\nActivity: ${activity.name}` +
+    (activity.description ? `\nDescription: ${activity.description}` : '') +
+    (activity.timeOfDay ? `\nTime: ${activity.timeOfDay}` : '') +
+    (activity.duration ? `\nDuration: ${activity.duration}` : '') +
+    (activity.category ? `\nCategory: ${activity.category}` : '');
+}
 import { useState } from 'react';
 import { buildActivityImage, buildFallbackImage } from '@/utils/mediaImages';
 
@@ -53,7 +76,7 @@ export default function PlanSection() {
           {wasUpdated && (
             <motion.span initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="badge badge-primary">Updated</motion.span>
           )}
-          <button onClick={() => openChat({ section: 'plan' })} className="edit-chat-btn">
+          <button onClick={() => openChat({ section: 'plan', contextSummary: buildPlanContext(plan) })} className="edit-chat-btn">
             <MessageSquare size={14} /> Edit in chat
           </button>
         </div>
@@ -101,7 +124,7 @@ export default function PlanSection() {
             </div>
           )}
           {displayDays.map((day, index) => (
-            <motion.div 
+            <motion.div
               key={day.day}
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -120,26 +143,7 @@ export default function PlanSection() {
                     {day.title.replace(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s*/i, '').replace(/^\d{4}-\d{2}-\d{2}\s*/, '').replace(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s*/i, '') || day.title}
                   </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    disabled={autofillingDay === day.day}
-                    onClick={async () => {
-                      setAutofillingDay(day.day);
-                      setAutofillError('');
-                      try {
-                        await autofillDay(day.day, 3);
-                      } catch (err: any) {
-                        setAutofillError(err?.response?.data?.message || 'Autofill failed for this day.');
-                      } finally {
-                        setAutofillingDay(null);
-                      }
-                    }}
-                  >
-                    {autofillingDay === day.day ? 'Autofilling...' : 'Autofill day'}
-                  </button>
-                  <button onClick={() => openChat({ section: 'plan', dayNumber: day.day })} className="day-edit-btn">Edit</button>
-                </div>
+                <button onClick={() => openChat({ section: 'plan', dayNumber: day.day, contextSummary: buildDayContext(day) })} className="day-edit-btn">Edit</button>
               </div>
               {autofillError && (
                 <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--error)' }}>{autofillError}</p>
@@ -209,6 +213,28 @@ export default function PlanSection() {
                         transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
                       }}
                     >
+                      {/* Name + actions */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                        <h4 style={{ fontSize: 15, fontWeight: 700, color: 'var(--navy-950)', lineHeight: 1.35, margin: 0 }}>
+                          {activity.name}
+                        </h4>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: 12, flexShrink: 0 }}>
+                          <button
+                            onClick={() => updateActivityStatus(activity.id, activity.status === 'saved' ? 'planned' : 'saved')}
+                            className={`icon-btn ${activity.status === 'saved' ? 'icon-btn-star-active' : 'icon-btn-star'}`}
+                            title="Save"
+                            style={{ width: 28, height: 28 }}
+                          >
+                            <Star size={13} fill={activity.status === 'saved' ? 'currentColor' : 'none'} />
+                          </button>
+                          <button
+                            onClick={() => openChat({ section: 'plan', dayNumber: day.day, itemId: activity.id, contextSummary: buildActivityContext(day, activity) })}
+                            className="icon-btn icon-btn-chat"
+                            title="Edit in chat"
+                            style={{ width: 28, height: 28 }}
+                          >
+                            <MessageSquare size={13} />
+                          </button>
                       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                         <div
                           style={{

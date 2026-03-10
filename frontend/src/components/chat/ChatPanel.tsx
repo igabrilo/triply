@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageCircle, X, Send, Sparkles } from 'lucide-react';
+import { MessageCircle, X, Send, Sparkles, Pencil } from 'lucide-react';
 import { useChatStore } from '@/store/chatStore';
 
 const quickPrompts = ['Cheaper', 'Kid friendly', 'Reduce walking', 'Rainy day', 'More museums'];
 
 export default function ChatPanel() {
-  const { isOpen, messages, isLoading, toggleChat, closeChat, sendMessage } = useChatStore();
+  const { isOpen, messages, isLoading, editScope, toggleChat, closeChat, sendMessage } = useChatStore();
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -58,6 +58,28 @@ export default function ChatPanel() {
               </div>
               <button onClick={closeChat} className="icon-btn"><X size={16} /></button>
             </div>
+
+            {/* Context Banner */}
+            {editScope?.contextSummary && (
+              <div style={{
+                padding: '10px 14px',
+                background: 'var(--primary-50)',
+                borderBottom: '1px solid var(--primary-100)',
+                fontSize: 12,
+                color: 'var(--navy-700)',
+                lineHeight: 1.5,
+                maxHeight: 120,
+                overflowY: 'auto',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, fontWeight: 600, color: 'var(--primary-700)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                  <Pencil size={11} />
+                  Editing context
+                </div>
+                <pre style={{ margin: 0, fontFamily: 'inherit', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {editScope.contextSummary}
+                </pre>
+              </div>
+            )}
 
             {/* Messages */}
             <div className="chat-messages">

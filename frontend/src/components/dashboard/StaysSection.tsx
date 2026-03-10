@@ -5,6 +5,20 @@ import { useTripStore } from '@/store/tripStore';
 import { useChatStore } from '@/store/chatStore';
 import { buildMapsSearchUrl, buildPlaceImage, buildStayPhotoProxyUrl } from '@/utils/mediaImages';
 import Chip from '@components/ui/Chip';
+import type { Stay } from '@/types';
+
+function buildStaysContext(stays: Stay[]): string {
+  return 'Stays:\n' + stays.map(s =>
+    `  - ${s.name} (${s.type}, ${s.neighborhood}), ${s.priceRange}, ${s.rating} stars, ${s.reviewCount} reviews`
+  ).join('\n');
+}
+
+function buildStayContext(stay: Stay): string {
+  return `Stay: ${stay.name}\nType: ${stay.type}\nNeighborhood: ${stay.neighborhood}` +
+    `\nPrice: ${stay.priceRange}\nRating: ${stay.rating} (${stay.reviewCount} reviews)` +
+    (stay.whyItFits ? `\nWhy it fits: ${stay.whyItFits}` : '') +
+    (stay.amenities.length ? `\nAmenities: ${stay.amenities.join(', ')}` : '');
+}
 
 const filterOptions = ['All', 'Budget', 'Mid-range', 'Family-friendly'];
 
@@ -48,6 +62,8 @@ export default function StaysSection() {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button onClick={() => setShowFilters(!showFilters)} className="icon-btn"><SlidersHorizontal size={16} /></button>
+          <button onClick={() => openChat({ section: 'stays', contextSummary: buildStaysContext(currentTrip.stays) })} className="edit-chat-btn">
           <button onClick={() => setShowFilters(!showFilters)} className="icon-btn">
             <SlidersHorizontal size={16} />
           </button>
@@ -178,6 +194,23 @@ export default function StaysSection() {
                   <p className="stay-why">{stay.whyItFits}</p>
                 </div>
 
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+                <p className="flight-price">{stay.priceRange}</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button onClick={() => toggleStaySaved(stay.id)} className={`icon-btn ${stay.saved ? 'icon-btn-star-active' : 'icon-btn-star'}`}>
+                    <Star size={16} fill={stay.saved ? 'currentColor' : 'none'} />
+                  </button>
+                  <button
+                    onClick={() => openChat({ section: 'stays', itemId: stay.id, contextSummary: buildStayContext(stay) })}
+                    className="icon-btn icon-btn-chat"
+                    title="Edit in chat"
+                    style={{ width: 28, height: 28 }}
+                  >
+                    <MessageSquare size={13} />
+                  </button>
+                  <a href={stay.bookingUrl} target="_blank" rel="noopener noreferrer" className="view-btn">
+                    View deal <ExternalLink size={12} />
+                  </a>
                 <div style={{ width: 320, maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
                     <p className="flight-price">{displayedPrice}</p>

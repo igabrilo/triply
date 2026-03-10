@@ -8,6 +8,28 @@ import { buildAirlineLogoUrl, buildMapsSearchUrl } from '@/utils/mediaImages';
 
 type SortKey = 'default' | 'departure' | 'price' | 'fastest';
 
+function buildFlightsContext(flights: Flight[]): string {
+  return 'Flights:\n' + flights.map(f =>
+    `  - ${f.airline}: ${f.departure} → ${f.arrival}, ${f.departureTime}–${f.arrivalTime}, ${f.duration}, ${f.stops === 0 ? 'Direct' : f.stops + ' stop(s)'}, ${f.priceRange}`
+  ).join('\n');
+}
+
+function buildFlightContext(flight: Flight): string {
+  return `Flight: ${flight.airline}\nRoute: ${flight.departure} → ${flight.arrival}` +
+    `\nDeparture: ${flight.departureTime}\nArrival: ${flight.arrivalTime}` +
+    `\nDuration: ${flight.duration}` +
+    `\nStops: ${flight.stops === 0 ? 'Direct' : flight.stops + ' stop(s)'}` +
+    `\nPrice: ${flight.priceRange}`;
+}
+
+/** "$120 - $250" → "from $120" */
+function formatFromPrice(range: string): string {
+  const m = range.match(/([\$€£])\s*(\d[\d,]*)/);
+  if (m) return `from ${m[1]}${m[2]}`;
+  const n = range.match(/(\d[\d,]*)/);
+  if (n) return `from $${n[1]}`;
+  return range;
+}
 const sortOptions: { key: SortKey; label: string }[] = [
   { key: 'default', label: 'Recommended' },
   { key: 'departure', label: 'Departure' },
@@ -31,6 +53,42 @@ function parseClock(value: string): number {
   const m = (value || '').match(/(\d{1,2}):(\d{2})/);
   return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : 0;
 }
+
+/** Normalize any time hint to "HH:MM" — handles 24h, 12h AM/PM, and vague labels */
+function extractClock(raw: string): string {
+  if (!raw) return '';
+  const s = raw.trim();
+  // Already 24h  e.g. "15:55" or "9:00"
+  const m24 = s.match(/^~?\s*(\d{1,2}):(\d{2})$/);
+  if (m24) return `${m24[1].padStart(2, '0')}:${m24[2]}`;
+  // 12h with AM/PM  e.g. "3:30 PM"
+  const m12 = s.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (m12) {
+    let h = parseInt(m12[1], 10);
+    if (m12[3].toUpperCase() === 'PM' && h !== 12) h += 12;
+    if (m12[3].toUpperCase() === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${m12[2]}`;
+  }
+  // Vague labels from AI
+  const lower = s.toLowerCase();
+  if (lower.includes('early morning')) return '06:00';
+  if (lower.includes('morning')) return '09:00';
+  if (lower.includes('noon') || lower.includes('midday')) return '12:00';
+  if (lower.includes('afternoon')) return '14:00';
+  if (lower.includes('evening')) return '19:00';
+  if (lower.includes('night')) return '22:00';
+  // Last resort — return the raw string (shouldn't happen)
+  return s;
+}
+
+type SortKey = 'default' | 'departure' | 'price' | 'fastest';
+
+const sortOptions: { key: SortKey; label: string }[] = [
+  { key: 'default', label: 'Recommended' },
+  { key: 'departure', label: 'Departure' },
+  { key: 'price', label: 'Price' },
+  { key: 'fastest', label: 'Fastest' },
+];
 
 function sortFlights(flights: Flight[], key: SortKey): Flight[] {
   if (key === 'default') return flights;
@@ -73,7 +131,7 @@ export default function FlightsSection() {
             </motion.span>
           )}
         </div>
-        <button onClick={() => openChat({ section: 'flights' })} className="edit-chat-btn">
+        <button onClick={() => openChat({ section: 'flights', contextSummary: buildFlightsContext(currentTrip.flights) })} className="edit-chat-btn">
           <MessageSquare size={14} /> Edit in chat
         </button>
       </div>
@@ -101,6 +159,49 @@ export default function FlightsSection() {
         ))}
       </div>
 
+      {/* Flight cards */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {sorted.map((flight, idx) => (
+          <motion.div
+            key={flight.id}
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: idx * 0.06 }}
+            style={{
+              padding: '18px 22px',
+              border: '1px solid var(--navy-100)',
+              borderRadius: 14,
+              background: 'var(--surface)',
+              transition: 'border-color 0.2s, box-shadow 0.2s',
+            }}
+          >
+            {/* Top row: Airline · Stops · Actions */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy-800)' }}>{flight.airline || 'Flight'}</span>
+                <span style={{ fontSize: 11, color: 'var(--navy-400)' }}>·</span>
+                <span style={{ fontSize: 12, color: 'var(--navy-500)' }}>
+                  {flight.stops === 0 ? 'Direct' : `${flight.stops} stop${flight.stops > 1 ? 's' : ''}`}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <button
+                  onClick={() => toggleFlightSaved(flight.id)}
+                  className={`icon-btn ${flight.saved ? 'icon-btn-star-active' : 'icon-btn-star'}`}
+                  title="Save flight"
+                  style={{ width: 28, height: 28 }}
+                >
+                  <Star size={13} fill={flight.saved ? 'currentColor' : 'none'} />
+                </button>
+                <button
+                  onClick={() => openChat({ section: 'flights', itemId: flight.id, contextSummary: buildFlightContext(flight) })}
+                  className="icon-btn icon-btn-chat"
+                  title="Edit in chat"
+                  style={{ width: 28, height: 28 }}
+                >
+                  <MessageSquare size={13} />
+                </button>
+              </div>
       <div style={{ display: 'grid', gap: 10 }}>
         {sorted.length === 0 && (
           <div className="item-card" style={{ textAlign: 'center', padding: '22px 18px' }}>

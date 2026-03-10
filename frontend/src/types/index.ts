@@ -114,6 +114,21 @@ export interface SavedItem {
   referenceId: string;
 }
 
+/* ─── Weather ─── */
+export type TemperatureUnit = 'celsius' | 'fahrenheit';
+
+export interface WeatherHourly {
+  dt: number;
+  temp: number;
+  feelsLike: number;
+  humidity: number;
+  windSpeed: number;
+  windDeg: number;
+  pop: number;
+  weatherCode: number;
+  weatherMain: string;
+  weatherDesc: string;
+  icon: string;
 export interface SuggestedActivity {
   id: string;
   title: string;
@@ -133,6 +148,25 @@ export interface SuggestedActivity {
 
 export interface WeatherDay {
   date: string;
+  dayOfWeek: string;
+  tempMin: number;
+  tempMax: number;
+  weatherCode: number;
+  weatherMain: string;
+  weatherDesc: string;
+  icon: string;
+  pop: number;
+  humidity: number;
+  windSpeed: number;
+  hourly: WeatherHourly[];
+}
+
+export interface WeatherData {
+  city: string;
+  lat: number;
+  lon: number;
+  days: WeatherDay[];
+  fetchedAt: number;
   highTempC: number | null;
   lowTempC: number | null;
   condition: string;
@@ -194,6 +228,7 @@ export interface EditScope {
   section: 'flights' | 'stays' | 'plan';
   dayNumber?: number;
   itemId?: string;
+  contextSummary?: string;
 }
 
 /* ─── Auth ─── */
@@ -207,4 +242,5 @@ export interface User {
 }
 
 /* ─── UI State ─── */
+export type TabId = 'plan' | 'flights' | 'stays' | 'weather' | 'map' | 'profile';
 export type TabId = 'overview' | 'plan' | 'activities' | 'flights' | 'stays' | 'budget' | 'weather' | 'map' | 'profile';
