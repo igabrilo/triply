@@ -90,9 +90,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => ({ messages: [...s.messages, userMsg], isLoading: true }));
 
     try {
-      // Prepend context summary so the AI knows which specific item is being edited
-      const enrichedContent = editScope?.contextSummary
-        ? `[User is editing the following item]\n${editScope.contextSummary}\n\n[User's instruction]\n${content}`
+      // Only prepend context for item-level edits (specific flight/stay/activity)
+      // Section-level edits already get full context from the backend snapshot
+      const enrichedContent = editScope?.contextSummary && editScope.itemId
+        ? `[User is editing this specific item]\n${editScope.contextSummary}\n\n${content}`
         : content;
       const result = await chatAPI.sendMessage(tripId, enrichedContent, editScope || undefined);
 

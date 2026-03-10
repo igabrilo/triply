@@ -278,7 +278,7 @@ export default function PlanSection() {
                                 <Star size={13} fill={activity.status === 'saved' ? 'currentColor' : 'none'} />
                               </button>
                               <button
-                                onClick={() => openChat({ section: 'plan', dayNumber: day.day, itemId: activity.id })}
+                                onClick={() => openChat({ section: 'plan', dayNumber: day.day, itemId: activity.id, contextSummary: buildActivityContext(day, activity) })}
                                 className="icon-btn icon-btn-chat"
                                 title="Edit in chat"
                                 style={{ width: 28, height: 28 }}

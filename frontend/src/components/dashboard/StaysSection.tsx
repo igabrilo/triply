@@ -65,7 +65,7 @@ export default function StaysSection() {
           <button onClick={() => setShowFilters(!showFilters)} className="icon-btn">
             <SlidersHorizontal size={16} />
           </button>
-          <button onClick={() => openChat({ section: 'stays' })} className="edit-chat-btn">
+          <button onClick={() => openChat({ section: 'stays', contextSummary: buildStaysContext(currentTrip.stays) })} className="edit-chat-btn">
             <MessageSquare size={14} /> Edit in chat
           </button>
         </div>
@@ -201,6 +201,13 @@ export default function StaysSection() {
                       </button>
                       <button onClick={() => toggleStaySaved(stay.id)} className={`icon-btn ${stay.saved ? 'icon-btn-star-active' : 'icon-btn-star'}`}>
                         <Star size={16} fill={stay.saved ? 'currentColor' : 'none'} />
+                      </button>
+                      <button
+                        onClick={() => openChat({ section: 'stays', itemId: stay.id, contextSummary: buildStayContext(stay) })}
+                        className="icon-btn icon-btn-chat"
+                        title="Edit in chat"
+                      >
+                        <MessageSquare size={13} />
                       </button>
                       <a href={stay.bookingUrl} target="_blank" rel="noopener noreferrer" className="view-btn">
                         View deal <ExternalLink size={12} />

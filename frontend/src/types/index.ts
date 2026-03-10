@@ -129,6 +129,8 @@ export interface WeatherHourly {
   weatherMain: string;
   weatherDesc: string;
   icon: string;
+}
+
 export interface SuggestedActivity {
   id: string;
   title: string;
@@ -242,5 +244,4 @@ export interface User {
 }
 
 /* ─── UI State ─── */
-export type TabId = 'plan' | 'flights' | 'stays' | 'weather' | 'map' | 'profile';
 export type TabId = 'overview' | 'plan' | 'activities' | 'flights' | 'stays' | 'budget' | 'weather' | 'map' | 'profile';

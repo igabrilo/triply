@@ -86,11 +86,14 @@ class ChatService:
 
         # Determine scope
         scope = (edit_scope.get('section') if edit_scope else None) or 'plan'
+        day_number = edit_scope.get('dayNumber') if edit_scope else None
         target_ref_type = edit_scope.get('targetRefType') if edit_scope else None
         target_ref_id = edit_scope.get('targetRefId') if edit_scope else None
 
         # Build context snapshot for the scoped section
-        context_snapshot = ChatService._build_context_snapshot(trip, scope)
+        context_snapshot = ChatService._build_context_snapshot(
+            trip, scope, day_number=day_number,
+        )
 
         # Save user message
         user_msg = ChatMessage(
@@ -130,7 +133,7 @@ class ChatService:
             response_content = ai_response.explanation
 
             # Apply the edit to the DB
-            diff = ChatService._apply_edit(trip, scope, ai_response)
+            diff = ChatService._apply_edit(trip, scope, ai_response, day_number=day_number)
 
         except Exception as exc:
             logger.exception("AI chat edit failed for trip %s", trip_id)
@@ -180,9 +183,16 @@ class ChatService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_context_snapshot(trip: Trip, scope: str) -> dict:
-        """Build a JSON-serialisable snapshot of the section being edited."""
+    def _build_context_snapshot(trip: Trip, scope: str, *, day_number: int = None) -> dict:
+        """Build a JSON-serialisable snapshot of the section being edited.
+
+        When *day_number* is provided for scope='plan', only that day is
+        included — significantly reducing prompt size for item-level edits.
+        """
         if scope == 'plan':
+            days = trip.days
+            if day_number is not None:
+                days = [d for d in days if d.day_index == day_number]
             return {
                 'days': [
                     {
@@ -203,7 +213,7 @@ class ChatService:
                             for item in d.plan_items
                         ],
                     }
-                    for d in trip.days
+                    for d in days
                 ]
             }
         elif scope == 'stays':
@@ -243,8 +253,11 @@ class ChatService:
         return {}
 
     @staticmethod
-    def _apply_edit(trip: Trip, scope: str, ai_response) -> Optional[dict]:
+    def _apply_edit(trip: Trip, scope: str, ai_response, *, day_number: int = None) -> Optional[dict]:
         """Apply the AI-generated edit to the database.
+
+        When *day_number* is set for plan edits, only the targeted day is
+        replaced while all other days are preserved.
 
         Returns a diff dict for auditing, or None on failure.
         """
@@ -252,7 +265,7 @@ class ChatService:
 
         try:
             if scope == 'plan' and ai_response.plan:
-                days_data = [
+                edited_days = [
                     {
                         'dayIndex': d.day_index,
                         'title': d.title,
@@ -260,8 +273,26 @@ class ChatService:
                     }
                     for d in ai_response.plan.days
                 ]
-                TripService.replace_plan(trip, days_data)
-                return {'scope': 'plan', 'days_count': len(days_data)}
+
+                if day_number is not None:
+                    # Merge: rebuild full plan, replacing only the targeted day
+                    edited_indices = {d['dayIndex'] for d in edited_days}
+                    existing_snapshot = ChatService._build_context_snapshot(trip, 'plan')
+                    kept_days = [
+                        {
+                            'dayIndex': d['day_index'],
+                            'title': d['title'],
+                            'items': d['items'],
+                        }
+                        for d in existing_snapshot.get('days', [])
+                        if d['day_index'] not in edited_indices
+                    ]
+                    merged = sorted(kept_days + edited_days, key=lambda d: d['dayIndex'])
+                    TripService.replace_plan(trip, merged)
+                    return {'scope': 'plan', 'days_count': len(merged), 'day_edited': day_number}
+                else:
+                    TripService.replace_plan(trip, edited_days)
+                    return {'scope': 'plan', 'days_count': len(edited_days)}
 
             elif scope == 'stays' and ai_response.stays:
                 stays_data = [s.model_dump() for s in ai_response.stays.stays]

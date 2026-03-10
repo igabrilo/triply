@@ -223,13 +223,22 @@ export default function FlightsSection() {
                     </span>
                   )}
                 </div>
-                <button
-                  onClick={() => toggleFlightSaved(flight.id)}
-                  className={`icon-btn ${flight.saved ? 'icon-btn-star-active' : 'icon-btn-star'}`}
-                  title="Save flight"
-                >
-                  <Star size={14} fill={flight.saved ? 'currentColor' : 'none'} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <button
+                    onClick={() => toggleFlightSaved(flight.id)}
+                    className={`icon-btn ${flight.saved ? 'icon-btn-star-active' : 'icon-btn-star'}`}
+                    title="Save flight"
+                  >
+                    <Star size={14} fill={flight.saved ? 'currentColor' : 'none'} />
+                  </button>
+                  <button
+                    onClick={() => openChat({ section: 'flights', itemId: flight.id, contextSummary: buildFlightContext(flight) })}
+                    className="icon-btn icon-btn-chat"
+                    title="Edit in chat"
+                  >
+                    <MessageSquare size={13} />
+                  </button>
+                </div>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, color: 'var(--navy-600)', fontSize: 13 }}>

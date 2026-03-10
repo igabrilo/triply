@@ -235,15 +235,20 @@ export const chatAPI = {
   },
 
   async sendMessage(tripId: string, content: string, editScope?: EditScope) {
+    let targetRefType: string | undefined;
+    if (editScope?.itemId) {
+      const typeMap: Record<string, string> = { plan: 'plan_item', flights: 'flight_option', stays: 'stay_option' };
+      targetRefType = typeMap[editScope.section] || 'plan_item';
+    }
     const { data } = await apiClient.post(`/trips/${tripId}/chat`, {
       content,
       editScope: editScope
         ? {
-            section: editScope.section,
-            dayNumber: editScope.dayNumber,
-            targetRefType: editScope.itemId ? 'plan_item' : undefined,
-            targetRefId: editScope.itemId,
-          }
+          section: editScope.section,
+          dayNumber: editScope.dayNumber,
+          targetRefType,
+          targetRefId: editScope.itemId,
+        }
         : undefined,
     });
     return data;
