@@ -51,11 +51,36 @@ export const geocodeAPI = {
 };
 
 // ------------------------------------------------------------------
-// Auth API (only profile fetch – actual auth handled by Supabase client)
+// Auth API (profile fetch + updates – actual auth handled by Supabase client)
 // ------------------------------------------------------------------
 export const authAPI = {
   async getCurrentUser() {
     const { data } = await apiClient.get('/auth/me');
+    return data;
+  },
+
+  async updateProfile(payload: { name: string }) {
+    const { data } = await apiClient.put('/auth/me', payload);
+    return data;
+  },
+
+  async updatePreferences(payload: {
+    interests?: string[];
+    defaultPace?: string;
+    defaultHomeAirport?: string;
+    rememberPreferences?: boolean;
+  }) {
+    const { data } = await apiClient.put('/auth/me/preferences', payload);
+    return data;
+  },
+
+  async updateNotifications(payload: {
+    priceAlerts?: boolean;
+    tripReminders?: boolean;
+    productUpdates?: boolean;
+    marketingOptIn?: boolean;
+  }) {
+    const { data } = await apiClient.put('/auth/me/notifications', payload);
     return data;
   },
 };

@@ -37,13 +37,11 @@ export default function PlanSection() {
     updateActivityStatus,
     addSuggestedActivityToDay,
     returnPlanItemToBucket,
-    autofillDay,
     updatedSections,
   } = useTripStore();
   const { openChat } = useChatStore();
   const [dropDay, setDropDay] = useState<number | null>(null);
-  const [autofillingDay, setAutofillingDay] = useState<number | null>(null);
-  const [autofillError, setAutofillError] = useState('');
+  const [autofillError] = useState('');
   const [imageErrorByActivityId, setImageErrorByActivityId] = useState<Record<string, boolean>>({});
 
   if (!currentTrip) return null;

@@ -22,15 +22,6 @@ function buildFlightContext(flight: Flight): string {
     `\nPrice: ${flight.priceRange}`;
 }
 
-/** "$120 - $250" → "from $120" */
-function formatFromPrice(range: string): string {
-  const m = range.match(/([\$€£])\s*(\d[\d,]*)/);
-  if (m) return `from ${m[1]}${m[2]}`;
-  const n = range.match(/(\d[\d,]*)/);
-  if (n) return `from $${n[1]}`;
-  return range;
-}
-
 const sortOptions: { key: SortKey; label: string }[] = [
   { key: 'default', label: 'Recommended' },
   { key: 'departure', label: 'Departure' },
@@ -53,33 +44,6 @@ function parseDuration(value: string): number {
 function parseClock(value: string): number {
   const m = (value || '').match(/(\d{1,2}):(\d{2})/);
   return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : 0;
-}
-
-/** Normalize any time hint to "HH:MM" — handles 24h, 12h AM/PM, and vague labels */
-function extractClock(raw: string): string {
-  if (!raw) return '';
-  const s = raw.trim();
-  // Already 24h  e.g. "15:55" or "9:00"
-  const m24 = s.match(/^~?\s*(\d{1,2}):(\d{2})$/);
-  if (m24) return `${m24[1].padStart(2, '0')}:${m24[2]}`;
-  // 12h with AM/PM  e.g. "3:30 PM"
-  const m12 = s.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-  if (m12) {
-    let h = parseInt(m12[1], 10);
-    if (m12[3].toUpperCase() === 'PM' && h !== 12) h += 12;
-    if (m12[3].toUpperCase() === 'AM' && h === 12) h = 0;
-    return `${String(h).padStart(2, '0')}:${m12[2]}`;
-  }
-  // Vague labels from AI
-  const lower = s.toLowerCase();
-  if (lower.includes('early morning')) return '06:00';
-  if (lower.includes('morning')) return '09:00';
-  if (lower.includes('noon') || lower.includes('midday')) return '12:00';
-  if (lower.includes('afternoon')) return '14:00';
-  if (lower.includes('evening')) return '19:00';
-  if (lower.includes('night')) return '22:00';
-  // Last resort — return the raw string (shouldn't happen)
-  return s;
 }
 
 function sortFlights(flights: Flight[], key: SortKey): Flight[] {

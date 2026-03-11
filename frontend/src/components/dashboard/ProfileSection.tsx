@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { User, Mail, Settings, CreditCard, Download, Trash2, Crown, MapPin, Bell } from 'lucide-react';
+import { User, Mail, Settings, CreditCard, Download, Trash2, Crown, MapPin, Bell, Loader } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useTripStore } from '@/store/tripStore';
-import { analyticsAPI, tripAPI } from '@/services/api';
+import { analyticsAPI, tripAPI, authAPI } from '@/services/api';
 import { emitGuideChanged, resetGuideState } from '@/utils/firstPlanGuide';
 import { featureFlags } from '@/config/featureFlags';
 import Button from '@components/ui/Button';
@@ -57,14 +58,60 @@ function activationToCsv(metrics: ActivationMetrics): string {
   return lines.join('\n');
 }
 
+const paceOptions = ['relaxed', 'balanced', 'packed'] as const;
+
 export default function ProfileSection() {
-  const { user } = useAuthStore();
-  const { currentTrip, setActiveTab } = useTripStore();
+  const navigate = useNavigate();
+  const { user, fetchCurrentUser } = useAuthStore();
+  const { currentTrip, setActiveTab, loadTrip } = useTripStore();
   const [activeSection, setActiveSection] = useState<'info' | 'preferences' | 'notifications' | 'subscription' | 'trips'>('info');
   const [activation, setActivation] = useState<ActivationMetrics | null>(null);
   const [loadingActivation, setLoadingActivation] = useState(false);
   const [activationWindow, setActivationWindow] = useState<7 | 30 | 60>(30);
   const isActivationEnabled = featureFlags.activationAnalytics;
+
+  const [name, setName] = useState(user?.name || '');
+  const [savingName, setSavingName] = useState(false);
+  const [selectedInterests, setSelectedInterests] = useState<Set<string>>(new Set(user?.preferences?.interests || []));
+  const [selectedPace, setSelectedPace] = useState<string>(user?.preferences?.defaultPace || 'balanced');
+  const [homeAirport, setHomeAirport] = useState(user?.preferences?.defaultHomeAirport || '');
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  const [notifications, setNotifications] = useState({
+    priceAlerts: user?.notificationPreferences?.priceAlerts ?? true,
+    tripReminders: user?.notificationPreferences?.tripReminders ?? true,
+    productUpdates: user?.notificationPreferences?.productUpdates ?? true,
+    marketingOptIn: user?.notificationPreferences?.marketingOptIn ?? false,
+  });
+  const [savingNotifications, setSavingNotifications] = useState(false);
+  const [trips, setTrips] = useState<any[]>([]);
+  const [loadingTrips, setLoadingTrips] = useState(false);
+
+  useEffect(() => {
+    setName(user?.name || '');
+    setSelectedInterests(new Set(user?.preferences?.interests || []));
+    setSelectedPace(user?.preferences?.defaultPace || 'balanced');
+    setHomeAirport(user?.preferences?.defaultHomeAirport || '');
+    setNotifications({
+      priceAlerts: user?.notificationPreferences?.priceAlerts ?? true,
+      tripReminders: user?.notificationPreferences?.tripReminders ?? true,
+      productUpdates: user?.notificationPreferences?.productUpdates ?? true,
+      marketingOptIn: user?.notificationPreferences?.marketingOptIn ?? false,
+    });
+  }, [user]);
+
+  useEffect(() => {
+    if (activeSection !== 'trips') return;
+    let cancelled = false;
+    setLoadingTrips(true);
+    tripAPI.getTrips()
+      .then((res) => {
+        if (cancelled) return;
+        if (res?.success && res?.trips) setTrips(res.trips);
+      })
+      .catch(() => { if (!cancelled) setTrips([]); })
+      .finally(() => { if (!cancelled) setLoadingTrips(false); });
+    return () => { cancelled = true; };
+  }, [activeSection]);
 
   useEffect(() => {
     if (activeSection !== 'trips') return;
@@ -142,9 +189,9 @@ export default function ProfileSection() {
       {activeSection === 'info' && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <div className="avatar avatar-lg">{user?.name?.charAt(0).toUpperCase() || 'U'}</div>
+            <div className="avatar avatar-lg">{name?.charAt(0).toUpperCase() || 'U'}</div>
             <div>
-              <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--navy-900)' }}>{user?.name || 'User'}</h3>
+              <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--navy-900)' }}>{name || 'User'}</h3>
               <p style={{ fontSize: 14, color: 'var(--navy-500)', display: 'flex', alignItems: 'center', gap: 4 }}>
                 <Mail size={13} /> {user?.email || 'user@example.com'}
               </p>
@@ -153,17 +200,38 @@ export default function ProfileSection() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, paddingTop: 16, borderTop: '1px solid var(--navy-100)' }}>
             <div>
               <label className="form-label">Name</label>
-              <input type="text" defaultValue={user?.name || ''} className="profile-input" />
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="profile-input"
+                placeholder="Your name"
+              />
             </div>
             <div>
               <label className="form-label">Email</label>
-              <input type="email" defaultValue={user?.email || ''} className="profile-input" disabled />
+              <input type="email" value={user?.email || ''} className="profile-input" disabled />
             </div>
           </div>
           <div style={{ display: 'flex', gap: 12 }}>
-            <Button size="sm">Save changes</Button>
-            <Button variant="ghost" size="sm" icon={<Download size={14} />}>Export data</Button>
-            <Button variant="ghost" size="sm" icon={<Trash2 size={14} />}>Delete account</Button>
+            <Button
+              size="sm"
+              disabled={savingName || name === (user?.name || '')}
+              onClick={async () => {
+                if (!name.trim()) return;
+                setSavingName(true);
+                try {
+                  const res = await authAPI.updateProfile({ name: name.trim() });
+                  if (res?.success) await fetchCurrentUser();
+                } finally {
+                  setSavingName(false);
+                }
+              }}
+            >
+              {savingName ? <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> : 'Save changes'}
+            </Button>
+            <Button variant="ghost" size="sm" icon={<Download size={14} />} disabled>Export data</Button>
+            <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} disabled>Delete account</Button>
           </div>
         </motion.div>
       )}
@@ -173,22 +241,66 @@ export default function ProfileSection() {
           <div>
             <label className="form-label">Default interests</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {interestOptions.map((i) => <Chip key={i} label={i} size="sm" onToggle={() => {}} />)}
+              {interestOptions.map((i) => (
+                <Chip
+                  key={i}
+                  label={i}
+                  size="sm"
+                  selected={selectedInterests.has(i)}
+                  onToggle={() => {
+                    const next = new Set(selectedInterests);
+                    if (next.has(i)) next.delete(i);
+                    else next.add(i);
+                    setSelectedInterests(next);
+                  }}
+                />
+              ))}
             </div>
           </div>
           <div>
             <label className="form-label">Default pace</label>
             <div style={{ display: 'flex', gap: 8 }}>
-              <Chip label="Relaxed" size="sm" onToggle={() => {}} />
-              <Chip label="Balanced" size="sm" selected onToggle={() => {}} />
-              <Chip label="Packed" size="sm" onToggle={() => {}} />
+              {paceOptions.map((p) => (
+                <Chip
+                  key={p}
+                  label={p.charAt(0).toUpperCase() + p.slice(1)}
+                  size="sm"
+                  selected={selectedPace === p}
+                  onToggle={() => setSelectedPace(p)}
+                />
+              ))}
             </div>
           </div>
           <div>
             <label className="form-label">Home airport (optional)</label>
-            <input type="text" placeholder="e.g., ZAG" className="profile-input" style={{ maxWidth: 200 }} />
+            <input
+              type="text"
+              placeholder="e.g., ZAG"
+              value={homeAirport}
+              onChange={(e) => setHomeAirport(e.target.value)}
+              className="profile-input"
+              style={{ maxWidth: 200 }}
+            />
           </div>
-          <Button size="sm">Save preferences</Button>
+          <Button
+            size="sm"
+            disabled={savingPrefs}
+            onClick={async () => {
+              setSavingPrefs(true);
+              try {
+                const res = await authAPI.updatePreferences({
+                  interests: Array.from(selectedInterests),
+                  defaultPace: selectedPace,
+                  defaultHomeAirport: homeAirport.trim() || undefined,
+                });
+                if (res?.success) await fetchCurrentUser();
+              } finally {
+                setSavingPrefs(false);
+              }
+            }}
+          >
+            {savingPrefs ? <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> : 'Save preferences'}
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -209,17 +321,33 @@ export default function ProfileSection() {
       {activeSection === 'notifications' && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {[
-            { label: 'Price alerts', desc: 'Get notified when flight or stay prices drop.' },
-            { label: 'Trip reminders', desc: 'Reminders before your trip start date.' },
-            { label: 'Feature updates', desc: 'New features and product updates.' },
-            { label: 'Marketing emails', desc: 'Travel deals and promotions.' },
+            { key: 'priceAlerts' as const, label: 'Price alerts', desc: 'Get notified when flight or stay prices drop.' },
+            { key: 'tripReminders' as const, label: 'Trip reminders', desc: 'Reminders before your trip start date.' },
+            { key: 'productUpdates' as const, label: 'Feature updates', desc: 'New features and product updates.' },
+            { key: 'marketingOptIn' as const, label: 'Marketing emails', desc: 'Travel deals and promotions.' },
           ].map((item) => (
-            <label key={item.label} className="profile-toggle-item">
+            <label key={item.key} className="profile-toggle-item">
               <div>
                 <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--navy-800)' }}>{item.label}</p>
                 <p style={{ fontSize: 12, color: 'var(--navy-500)' }}>{item.desc}</p>
               </div>
-              <input type="checkbox" defaultChecked style={{ width: 16, height: 16 }} />
+              <input
+                type="checkbox"
+                checked={notifications[item.key]}
+                onChange={async (e) => {
+                  const newVal = e.target.checked;
+                  setNotifications((prev) => ({ ...prev, [item.key]: newVal }));
+                  setSavingNotifications(true);
+                  try {
+                    const res = await authAPI.updateNotifications({ [item.key]: newVal });
+                    if (res?.success) await fetchCurrentUser();
+                  } finally {
+                    setSavingNotifications(false);
+                  }
+                }}
+                disabled={savingNotifications}
+                style={{ width: 16, height: 16 }}
+              />
             </label>
           ))}
         </motion.div>
@@ -383,18 +511,53 @@ export default function ProfileSection() {
             </div>
           )}
 
-          <div className="item-card card-interactive">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--navy-900)' }}>Paris — 5 days</h3>
-                <p style={{ fontSize: 12, color: 'var(--navy-500)', marginTop: 2 }}>Jun 10–15, 2026 · 2 travelers</p>
-              </div>
-              <span className="badge badge-success">Active</span>
+          {loadingTrips ? (
+            <div className="item-card" style={{ textAlign: 'center', padding: 32 }}>
+              <Loader size={24} style={{ color: 'var(--primary-600)', animation: 'spin 1s linear infinite', margin: '0 auto 8px' }} />
+              <p style={{ fontSize: 14, color: 'var(--navy-500)' }}>Loading trips...</p>
             </div>
-          </div>
-          <div className="item-card" style={{ opacity: 0.6, textAlign: 'center', padding: 32 }}>
-            <p style={{ fontSize: 14, color: 'var(--navy-500)' }}>No other trips yet. Start planning!</p>
-          </div>
+          ) : trips.length > 0 ? (
+            trips.map((trip) => {
+              const daysCount = trip.startDate && trip.endDate
+                ? Math.max(1, Math.ceil((new Date(trip.endDate).getTime() - new Date(trip.startDate).getTime()) / 86400000))
+                : 0;
+              const dateRange = trip.startDate && trip.endDate
+                ? `${new Date(trip.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(trip.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                : '';
+              return (
+                <div
+                  key={trip.id}
+                  className="item-card card-interactive"
+                  style={{ cursor: 'pointer' }}
+                  onClick={async () => {
+                    await loadTrip(trip.id);
+                    setActiveTab('overview');
+                    navigate('/dashboard');
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--navy-900)' }}>
+                        {trip.destination || trip.title || 'Untitled Trip'}
+                      </h3>
+                      <p style={{ fontSize: 12, color: 'var(--navy-500)', marginTop: 2 }}>
+                        {dateRange}
+                        {trip.travelersCount ? ` · ${trip.travelersCount} traveler${trip.travelersCount !== 1 ? 's' : ''}` : ''}
+                        {daysCount > 0 ? ` · ${daysCount} days` : ''}
+                      </p>
+                    </div>
+                    <span className={`badge ${trip.status === 'ready' ? 'badge-success' : trip.status === 'generating' ? 'badge-warning' : 'badge-error'}`}>
+                      {trip.status === 'ready' ? 'Complete' : trip.status === 'generating' ? 'Generating...' : 'Draft'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="item-card" style={{ opacity: 0.6, textAlign: 'center', padding: 32 }}>
+              <p style={{ fontSize: 14, color: 'var(--navy-500)' }}>No trips yet. Start planning!</p>
+            </div>
+          )}
         </motion.div>
       )}
     </div>

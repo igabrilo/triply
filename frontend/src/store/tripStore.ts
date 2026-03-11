@@ -9,7 +9,7 @@ import type {
   Flight,
   Stay,
   SuggestedActivity,
-  WeatherDay,
+  TripWeatherDay,
   BudgetHint,
   OverviewData,
 } from '@/types';
@@ -286,7 +286,7 @@ function transformActivities(backendActivities: any[]): SuggestedActivity[] {
   }));
 }
 
-function transformWeather(backendWeather: any[]): WeatherDay[] {
+function transformWeather(backendWeather: any[]): TripWeatherDay[] {
   return (backendWeather || []).map((w: any) => ({
     date: w.date || '',
     highTempC: w.high_temp_c ?? w.highTempC ?? null,

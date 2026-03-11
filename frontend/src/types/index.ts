@@ -30,7 +30,7 @@ export interface Trip {
   stays: Stay[];
   plan: PlanDay[];
   activities: SuggestedActivity[];
-  weather: WeatherDay[];
+  weather: TripWeatherDay[];
   budget: BudgetHint | null;
   overview: OverviewData | null;
   selectedFlightId?: string | null;
@@ -165,17 +165,27 @@ export interface WeatherDay {
   hourly: WeatherHourly[];
 }
 
+/** AI-generated trip weather (from backend) – simpler format than WeatherDay */
+export interface TripWeatherDay {
+  date: string;
+  highTempC?: number | null;
+  lowTempC?: number | null;
+  condition?: string;
+  icon?: string;
+  humidityPct?: number | null;
+}
+
 export interface WeatherData {
   city: string;
   lat: number;
   lon: number;
   days: WeatherDay[];
   fetchedAt: number;
-  highTempC: number | null;
-  lowTempC: number | null;
-  condition: string;
-  icon: string;
-  humidityPct: number | null;
+  highTempC?: number | null;
+  lowTempC?: number | null;
+  condition?: string;
+  icon?: string;
+  humidityPct?: number | null;
 }
 
 export interface BudgetCategoryHint {
@@ -237,12 +247,30 @@ export interface EditScope {
 }
 
 /* ─── Auth ─── */
+export interface UserPreferences {
+  rememberPreferences?: boolean;
+  defaultBudgetTier?: string;
+  defaultPace?: string;
+  defaultHomeCity?: string;
+  defaultHomeAirport?: string;
+  interests?: string[];
+  constraints?: Record<string, unknown>;
+}
+
+export interface NotificationPreferences {
+  tripReminders?: boolean;
+  priceAlerts?: boolean;
+  productUpdates?: boolean;
+  marketingOptIn?: boolean;
+}
+
 export interface User {
   id: string;
   email: string;
   name: string;
   avatar?: string;
-  preferences?: TripPreferences;
+  preferences?: UserPreferences;
+  notificationPreferences?: NotificationPreferences;
   createdAt: string;
 }
 

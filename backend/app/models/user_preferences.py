@@ -29,13 +29,16 @@ class UserPreferences(db.Model):
     user = db.relationship('User', back_populates='preferences')
 
     def to_dict(self):
+        interests = []
+        if self.interests_array:
+            interests = [s.strip() for s in self.interests_array.split(',') if s.strip()]
         return {
             'rememberPreferences': self.remember_preferences,
             'defaultBudgetTier': self.default_budget_tier,
             'defaultPace': self.default_pace,
             'defaultHomeCity': self.default_home_city,
             'defaultHomeAirport': self.default_home_airport,
-            'interests': self.interests_array,
+            'interests': interests,
             'constraints': self.constraints,
         }
 
