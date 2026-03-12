@@ -16,6 +16,7 @@ const tabs: { id: TabId; label: string }[] = [
   { id: 'budget', label: 'Budget' },
   { id: 'weather', label: 'Weather' },
   { id: 'map', label: 'Map' },
+  { id: 'notes', label: 'Notes' },
 ];
 
 export default function DashboardHeader() {

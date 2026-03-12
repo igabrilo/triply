@@ -13,6 +13,7 @@ import StaysSection from '@components/dashboard/StaysSection';
 import BudgetSection from '@components/dashboard/BudgetSection';
 import WeatherSection from '@components/dashboard/WeatherSection';
 import MapSection from '@components/dashboard/MapSection';
+import NotesSection from '@components/dashboard/NotesSection';
 import ProfileSection from '@components/dashboard/ProfileSection';
 import QuickTweaks from '@components/dashboard/QuickTweaks';
 import SavedItems from '@components/dashboard/SavedItems';
@@ -204,6 +205,7 @@ export default function Dashboard() {
       case 'budget': return <BudgetSection />;
       case 'weather': return <WeatherSection />;
       case 'map': return <MapSection />;
+      case 'notes': return <NotesSection />;
       case 'profile': return <ProfileSection />;
       default: return <OverviewSection />;
     }

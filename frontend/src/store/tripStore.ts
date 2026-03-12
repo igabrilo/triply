@@ -239,8 +239,8 @@ function transformStays(backendStays: any[], selectedStayId?: string | null): St
     const priceRange = priceFromPayload
       ? String(priceFromPayload)
       : numericPrice != null
-      ? `${currency} ${Number(numericPrice).toFixed(0)}/night`
-      : 'Price on request';
+        ? `${currency} ${Number(numericPrice).toFixed(0)}/night`
+        : 'Price on request';
     return {
       id: s.id || `stay_${idx}`,
       name: s.name || 'Unknown',
@@ -348,9 +348,9 @@ function mapBackendTripToTrip(t: any): Trip {
   const aiGenerated = t.constraints?.aiGenerated || {};
   const mergedBudget = aiGenerated.budget || aiGenerated.budgetEntries
     ? {
-        ...(aiGenerated.budget || {}),
-        entries: aiGenerated.budgetEntries || [],
-      }
+      ...(aiGenerated.budget || {}),
+      entries: aiGenerated.budgetEntries || [],
+    }
     : null;
 
   return {
@@ -533,14 +533,14 @@ export const useTripStore = create<TripState>((set, get) => ({
           generationStatus: '',
           currentTrip: s.currentTrip
             ? {
-                ...s.currentTrip,
-                status:
-                  s.currentTrip.plan.length > 0 &&
+              ...s.currentTrip,
+              status:
+                s.currentTrip.plan.length > 0 &&
                   s.currentTrip.flights.length > 0 &&
                   s.currentTrip.stays.length > 0
-                    ? 'ready'
-                    : 'error',
-              }
+                  ? 'ready'
+                  : 'error',
+            }
             : null,
         }));
       };
@@ -675,10 +675,13 @@ export const useTripStore = create<TripState>((set, get) => ({
   },
 
   saveTripNotes: async (notes) => {
-    const { currentTrip, loadTrip } = get();
+    const { currentTrip } = get();
     if (!currentTrip) return;
-    await tripAPI.updateNotes(currentTrip.id, notes);
-    await loadTrip(currentTrip.id);
+    const result = await tripAPI.updateNotes(currentTrip.id, notes);
+    if (result?.success && result?.trip) {
+      const mapped = mapBackendTripToTrip(result.trip);
+      set({ currentTrip: mapped });
+    }
   },
 
   saveOverviewImage: async (imageUrl) => {

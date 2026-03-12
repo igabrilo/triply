@@ -275,4 +275,4 @@ export interface User {
 }
 
 /* ─── UI State ─── */
-export type TabId = 'overview' | 'plan' | 'activities' | 'flights' | 'stays' | 'budget' | 'weather' | 'map' | 'profile';
+export type TabId = 'overview' | 'plan' | 'activities' | 'flights' | 'stays' | 'budget' | 'weather' | 'map' | 'notes' | 'profile';
