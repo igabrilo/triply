@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { ArrowRight, CloudSun, FileText, PiggyBank, Plane, Bed } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowRight, CloudSun, FileText, PiggyBank, Plane, Bed, X } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
 import { buildFallbackImage, buildAirlineLogoUrl, buildPlaceImage, buildWeatherImage, buildStayPhotoProxyUrl } from '@/utils/mediaImages';
 import SidebarMap from '@components/dashboard/SidebarMap';
@@ -191,6 +192,7 @@ function buildPersonalizedExpertAdvice(params: {
 export default function OverviewSection() {
   const {
     currentTrip,
+    saveTripNotes,
     setActiveTab,
     setSelectedDay,
     setFocusFlightId,
@@ -200,7 +202,35 @@ export default function OverviewSection() {
   const [flightLogoBroken, setFlightLogoBroken] = useState(false);
   const [stayThumbBroken, setStayThumbBroken] = useState(false);
   const [weatherThumbBroken, setWeatherThumbBroken] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [saveNotesError, setSaveNotesError] = useState('');
+  const hasUserEditedNotes = useRef(false);
   const overview = currentTrip?.overview;
+  const tripId = currentTrip?.id;
+
+  useEffect(() => {
+    setNotes(overview?.notes || '');
+    hasUserEditedNotes.current = false;
+    setSaveNotesError('');
+  }, [tripId]);
+
+  useEffect(() => {
+    if (!tripId || !hasUserEditedNotes.current) return;
+    const t = window.setTimeout(async () => {
+      setSavingNotes(true);
+      setSaveNotesError('');
+      try {
+        await saveTripNotes(notes);
+      } catch {
+        setSaveNotesError('Could not save notes. Please try again.');
+      } finally {
+        setSavingNotes(false);
+      }
+    }, 1500);
+    return () => window.clearTimeout(t);
+  }, [notes, tripId, saveTripNotes]);
 
   if (!currentTrip) return null;
 
@@ -622,7 +652,7 @@ export default function OverviewSection() {
           <button
             type="button"
             className="item-card overview-print-block"
-            onClick={() => setActiveTab('notes')}
+            onClick={() => setNotesOpen(true)}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -665,6 +695,103 @@ export default function OverviewSection() {
           <span>Page <span className="print-page-number" /></span>
         </div>
       </div>
+
+      <AnimatePresence>
+        {notesOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="chat-panel print-hide"
+            style={{ right: 'auto', left: 24, display: 'flex', flexDirection: 'column' }}
+          >
+            <div className="chat-header">
+              <div className="chat-header-title">
+                <FileText size={15} style={{ color: 'var(--primary-500)' }} />
+                Trip Notes
+              </div>
+              <button onClick={() => setNotesOpen(false)} className="icon-btn" aria-label="Close notes">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div style={{ flex: 1, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto' }}>
+              <textarea
+                autoFocus
+                value={notes}
+                onChange={(e) => {
+                  hasUserEditedNotes.current = true;
+                  setSaveNotesError('');
+                  setNotes(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const ta = e.currentTarget;
+                    const start = ta.selectionStart;
+                    const end = ta.selectionEnd;
+                    const before = notes.slice(0, start);
+                    const after = notes.slice(end);
+                    const lineStart = before.lastIndexOf('\n') + 1;
+                    const line = before.slice(lineStart);
+                    const bulletMatch = /^[•\-*]\s*/.exec(line);
+                    const prefix = bulletMatch ? bulletMatch[0] : '• ';
+                    e.preventDefault();
+                    const newNotes = before + '\n' + prefix + after;
+                    setNotes(newNotes);
+                    hasUserEditedNotes.current = true;
+                    setSaveNotesError('');
+                    requestAnimationFrame(() => {
+                      const newPos = start + 1 + prefix.length;
+                      ta.setSelectionRange(newPos, newPos);
+                    });
+                  }
+                }}
+                placeholder="• Write trip notes..."
+                style={{
+                  flex: 1,
+                  width: '100%',
+                  minHeight: 280,
+                  resize: 'none',
+                  border: 'none',
+                  outline: 'none',
+                  background: 'transparent',
+                  fontSize: 13,
+                  lineHeight: 1.7,
+                  color: 'var(--navy-800)',
+                  fontFamily: 'inherit',
+                }}
+              />
+            </div>
+
+            <div className="chat-input-bar" style={{ justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11, color: 'var(--navy-400)' }}>
+                {saveNotesError
+                  ? <span style={{ color: 'var(--error)' }}>{saveNotesError}</span>
+                  : savingNotes ? 'Saving...' : 'Auto-saved'
+                }
+              </span>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={savingNotes}
+                onClick={async () => {
+                  setSavingNotes(true);
+                  setSaveNotesError('');
+                  try {
+                    await saveTripNotes(notes);
+                  } catch {
+                    setSaveNotesError('Could not save.');
+                  } finally {
+                    setSavingNotes(false);
+                  }
+                }}
+              >
+                {savingNotes ? 'Saving...' : 'Save now'}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
