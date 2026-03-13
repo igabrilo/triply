@@ -645,7 +645,12 @@ export const useTripStore = create<TripState>((set, get) => ({
   updateSuggestedActivityStatus: async (activityId, status) => {
     const { currentTrip, loadTrip } = get();
     if (!currentTrip) return;
-    await tripAPI.updateActivityStatus(currentTrip.id, activityId, status);
+    const result = await tripAPI.updateActivityStatus(currentTrip.id, activityId, status);
+    if (result?.success && result?.trip) {
+      const mapped = mapBackendTripToTrip(result.trip);
+      set({ currentTrip: mapped });
+      return;
+    }
     await loadTrip(currentTrip.id);
   },
 
