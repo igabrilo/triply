@@ -156,6 +156,53 @@ def _build_activity_geocode_queries(activity: dict, destination_hint: str) -> li
     return _dedupe_text_values(combined + base + [destination])
 
 
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance between two points in km."""
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _best_insert_index(existing_items: list[PlanItem], new_lat: float | None, new_lng: float | None) -> int:
+    """Find the position where inserting the new activity minimises total route distance.
+
+    Falls back to appending at the end if coords are missing.
+    """
+    if new_lat is None or new_lng is None:
+        return len(existing_items)
+
+    geo_items = [(i, it) for i, it in enumerate(existing_items) if it.lat is not None and it.lng is not None]
+    if not geo_items:
+        return len(existing_items)
+
+    n = len(existing_items)
+    best_idx = n
+    best_cost = float('inf')
+
+    for pos in range(n + 1):
+        cost = 0.0
+        prev_lat, prev_lng = None, None
+        for i in range(n + 1):
+            if i == pos:
+                cur_lat, cur_lng = new_lat, new_lng
+            elif i < pos:
+                cur_lat, cur_lng = existing_items[i].lat, existing_items[i].lng
+            else:
+                cur_lat, cur_lng = existing_items[i - 1].lat, existing_items[i - 1].lng
+
+            if prev_lat is not None and cur_lat is not None and prev_lng is not None and cur_lng is not None:
+                cost += _haversine_km(prev_lat, prev_lng, cur_lat, cur_lng)
+            prev_lat, prev_lng = cur_lat, cur_lng
+
+        if cost < best_cost:
+            best_cost = cost
+            best_idx = pos
+
+    return best_idx
+
+
 def _resolve_activity_geo_fields(activity: dict, destination_hint: str):
     maps_url = activity.get('maps_url')
     location_name = activity.get('location_name') or activity.get('place_query')
@@ -740,7 +787,12 @@ class TripService:
             destination_hint,
         )
 
-        sort_order = len(day.plan_items)
+        ordered_items = sorted(day.plan_items, key=lambda pi: pi.sort_order)
+        insert_idx = _best_insert_index(ordered_items, lat, lng)
+
+        for pi in ordered_items[insert_idx:]:
+            pi.sort_order += 1
+
         db.session.add(PlanItem(
             trip_day=day,
             title=activity.get('title', 'Activity'),
@@ -753,7 +805,7 @@ class TripService:
             lat=lat,
             lng=lng,
             maps_url=maps_url,
-            sort_order=sort_order,
+            sort_order=insert_idx,
             status='suggested',
         ))
 
@@ -801,7 +853,6 @@ class TripService:
         picked_ids = {str(activity.get('id')) for activity in picked}
         remaining = [activity for activity in normalized if str(activity.get('id')) not in picked_ids]
 
-        base_sort = len(day.plan_items)
         time_blocks = ['morning', 'afternoon', 'evening']
         destination_hint = str(trip.destination or '').strip()
         for idx, activity in enumerate(picked):
@@ -810,7 +861,13 @@ class TripService:
                 destination_hint,
             )
 
-            db.session.add(PlanItem(
+            ordered_items = sorted(day.plan_items, key=lambda pi: pi.sort_order)
+            insert_idx = _best_insert_index(ordered_items, lat, lng)
+
+            for pi in ordered_items[insert_idx:]:
+                pi.sort_order += 1
+
+            new_item = PlanItem(
                 trip_day=day,
                 title=activity.get('title', 'Activity'),
                 description=activity.get('description'),
@@ -823,9 +880,11 @@ class TripService:
                 lat=lat,
                 lng=lng,
                 maps_url=maps_url,
-                sort_order=base_sort + idx,
+                sort_order=insert_idx,
                 status='suggested',
-            ))
+            )
+            db.session.add(new_item)
+            day.plan_items.append(new_item)
 
         ai_generated['activities'] = remaining
         constraints['aiGenerated'] = ai_generated

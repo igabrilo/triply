@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Compass, Plus, Bookmark, MapPin, ExternalLink } from 'lucide-react';
+import { Compass, Plus, Bookmark, MapPin, ExternalLink, Ticket } from 'lucide-react';
 import DayPicker from '@components/dashboard/DayPicker';
 import { useTripStore } from '@/store/tripStore';
-import { buildActivityImage, buildFallbackImage, buildMapsSearchUrl } from '@/utils/mediaImages';
+import { buildActivityImage, buildFallbackImage, buildMapsSearchUrl, buildTicketsSearchUrl } from '@/utils/mediaImages';
 
 const CATEGORY_FILTERS = ['all', 'attractions', 'food', 'nightlife', 'outdoors', 'shopping', 'custom'];
 
@@ -150,6 +150,15 @@ export default function ActivitiesSection() {
               buildMapsSearchUrl(
                 activity.placeQuery || activity.locationName || activity.title || `${destination} activity`,
               );
+            const isAttraction = (activity.category || '').toLowerCase() === 'attractions';
+            const ticketsUrl =
+              activity.externalUrl ||
+              (isAttraction
+                ? buildTicketsSearchUrl(
+                    activity.placeQuery || activity.locationName || activity.title || '',
+                    destination,
+                  )
+                : null);
             const displayTitle = cleanActivityTitle(activity.title || '', destination) || activity.title;
             const displayDescription = cleanActivityDescription(
               activity.description || '',
@@ -283,6 +292,18 @@ export default function ActivitiesSection() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'stretch', justifyContent: 'center', minWidth: 120 }}>
+                  {ticketsUrl && (
+                    <a
+                      href={ticketsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-ghost btn-sm"
+                      title="Find tickets"
+                      style={{ justifyContent: 'center' }}
+                    >
+                      <Ticket size={14} /> Tickets
+                    </a>
+                  )}
                   <a
                     href={mapsUrl}
                     target="_blank"

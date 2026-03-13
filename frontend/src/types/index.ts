@@ -141,6 +141,7 @@ export interface SuggestedActivity {
   costHint: string;
   placeQuery: string;
   mapsUrl?: string;
+  externalUrl?: string;
   imageQuery?: string;
   cachedImageUrl?: string;
   locationName?: string;

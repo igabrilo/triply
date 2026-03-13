@@ -276,6 +276,7 @@ function transformActivities(backendActivities: any[]): SuggestedActivity[] {
     costHint: a.cost_hint || a.costHint || '',
     placeQuery: a.place_query || a.placeQuery || '',
     mapsUrl: a.maps_url || a.mapsUrl || '',
+    externalUrl: a.external_url || a.externalUrl || '',
     imageQuery: a.image_query || a.imageQuery || '',
     cachedImageUrl: a.cached_image_url || a.cachedImageUrl || '',
     locationName: a.location_name || a.locationName || '',
