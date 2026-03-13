@@ -4,6 +4,7 @@ import { Star, MessageSquare, Ticket, MapPin, Clock, Undo2 } from 'lucide-react'
 import { useTripStore } from '@/store/tripStore';
 import { useChatStore } from '@/store/chatStore';
 import { buildActivityImage, buildFallbackImage } from '@/utils/mediaImages';
+import Modal from '@components/ui/Modal';
 import type { PlanDay, Activity } from '@/types';
 
 function buildPlanContext(plan: PlanDay[]): string {
@@ -43,6 +44,7 @@ export default function PlanSection() {
   const [dropDay, setDropDay] = useState<number | null>(null);
   const [autofillError] = useState('');
   const [imageErrorByActivityId, setImageErrorByActivityId] = useState<Record<string, boolean>>({});
+  const [pendingRevert, setPendingRevert] = useState<{ id: string; name: string } | null>(null);
 
   if (!currentTrip) return null;
   const destination = currentTrip.formData.destinations[0] || 'destination';
@@ -260,9 +262,9 @@ export default function PlanSection() {
                             </h4>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: 12, flexShrink: 0 }}>
                               <button
-                                onClick={() => returnPlanItemToBucket(activity.id)}
+                                onClick={() => setPendingRevert({ id: activity.id, name: activity.name })}
                                 className="icon-btn"
-                                title="Return to activities"
+                                title="Remove from plan"
                                 style={{ width: 28, height: 28 }}
                               >
                                 <Undo2 size={13} />
@@ -337,6 +339,31 @@ export default function PlanSection() {
           ))}
         </motion.div>
       </AnimatePresence>
+
+      <Modal
+        isOpen={!!pendingRevert}
+        onClose={() => setPendingRevert(null)}
+        title="Remove from plan?"
+        size="sm"
+      >
+        <p style={{ margin: '0 0 20px', fontSize: 13, color: 'var(--navy-600)', lineHeight: 1.55 }}>
+          <strong style={{ color: 'var(--navy-900)' }}>{pendingRevert?.name}</strong> will be moved back to the Activities bucket. You can add it to a day again at any time.
+        </p>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setPendingRevert(null)}>
+            Cancel
+          </button>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => {
+              if (pendingRevert) returnPlanItemToBucket(pendingRevert.id);
+              setPendingRevert(null);
+            }}
+          >
+            <Undo2 size={13} /> Remove
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

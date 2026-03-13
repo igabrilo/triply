@@ -378,6 +378,7 @@ export default function ActivitiesSection() {
         onClose={() => setActiveActivityId(null)}
         days={currentTrip.plan.map((d) => ({ day: d.day, title: d.title }))}
         onSelectDay={addToDay}
+        activityTitle={currentTrip.activities.find((a) => a.id === activeActivityId)?.title}
       />
     </div>
   );
