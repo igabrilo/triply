@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, CloudSun, FileText, PiggyBank, Plane, Bed, X } from 'lucide-react';
+import { ArrowRight, CloudSun, FileText, PiggyBank, Plane, Bed, X, Plus, Trash2 } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
 import { buildFallbackImage, buildAirlineLogoUrl, buildPlaceImage, buildWeatherImage, buildStayPhotoProxyUrl } from '@/utils/mediaImages';
 import SidebarMap from '@components/dashboard/SidebarMap';
@@ -189,10 +189,21 @@ function buildPersonalizedExpertAdvice(params: {
   return deduped.slice(0, 6);
 }
 
+function normalizeCat(value: string): string {
+  return (value || 'other').trim().toLowerCase();
+}
+
+function labelCat(value: string): string {
+  const n = normalizeCat(value);
+  return n.charAt(0).toUpperCase() + n.slice(1);
+}
+
 export default function OverviewSection() {
   const {
     currentTrip,
     saveTripNotes,
+    addBudgetEntry,
+    deleteBudgetEntry,
     setActiveTab,
     setSelectedDay,
     setFocusFlightId,
@@ -207,6 +218,14 @@ export default function OverviewSection() {
   const [savingNotes, setSavingNotes] = useState(false);
   const [saveNotesError, setSaveNotesError] = useState('');
   const hasUserEditedNotes = useRef(false);
+
+  const [budgetOpen, setBudgetOpen] = useState(false);
+  const [qCat, setQCat] = useState('other');
+  const [qAmount, setQAmount] = useState('');
+  const [qDate, setQDate] = useState('');
+  const [qNote, setQNote] = useState('');
+  const [qSaving, setQSaving] = useState(false);
+  const [qDeletingId, setQDeletingId] = useState<string | null>(null);
   const overview = currentTrip?.overview;
   const tripId = currentTrip?.id;
 
@@ -215,6 +234,12 @@ export default function OverviewSection() {
     hasUserEditedNotes.current = false;
     setSaveNotesError('');
   }, [tripId]);
+
+  useEffect(() => {
+    if (currentTrip?.formData?.startDate) {
+      setQDate(currentTrip.formData.startDate);
+    }
+  }, [tripId, currentTrip?.formData?.startDate]);
 
   useEffect(() => {
     if (!tripId || !hasUserEditedNotes.current) return;
@@ -624,10 +649,7 @@ export default function OverviewSection() {
           <button
             type="button"
             className="item-card overview-print-block"
-            onClick={() => {
-              setSelectedDay(null);
-              setActiveTab('budget');
-            }}
+            onClick={() => setBudgetOpen(true)}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -648,6 +670,7 @@ export default function OverviewSection() {
                   : 'No spending tracked yet'}
               </p>
             </div>
+            <ArrowRight size={14} style={{ color: 'var(--navy-400)', marginLeft: 'auto' }} />
           </button>
           <button
             type="button"
@@ -697,6 +720,183 @@ export default function OverviewSection() {
       </div>
 
       <AnimatePresence>
+        {budgetOpen && (() => {
+          const budget = currentTrip.budget;
+          const currency = budget?.currency || 'EUR';
+          const allCats = Array.from(new Set([
+            'transport', 'accommodation', 'food', 'activities', 'shopping', 'other',
+            ...(budget?.categories || []).map((c) => normalizeCat(c.category || 'other')),
+          ]));
+          const estimatedMap = new Map<string, number>();
+          for (const c of budget?.categories || []) {
+            estimatedMap.set(normalizeCat(c.category || 'other'), Number(c.estimatedAmount ?? 0));
+          }
+          const actualMap = new Map<string, number>();
+          for (const e of budget?.entries || []) {
+            const k = normalizeCat(e.category || 'other');
+            actualMap.set(k, (actualMap.get(k) || 0) + Number(e.amount || 0));
+          }
+          const displayCats = Array.from(new Set([
+            ...allCats,
+            ...Array.from(actualMap.keys()),
+            ...Array.from(estimatedMap.keys()),
+          ]));
+
+          return (
+            <motion.div
+              key="budget-popup"
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.95 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="chat-panel print-hide"
+              style={{ right: 'auto', left: 24, display: 'flex', flexDirection: 'column', width: 440, maxHeight: 680 }}
+            >
+              <div className="chat-header">
+                <div className="chat-header-title">
+                  <PiggyBank size={15} style={{ color: 'var(--success-600)' }} />
+                  Budget
+                </div>
+                <button onClick={() => setBudgetOpen(false)} className="icon-btn" aria-label="Close budget">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12, padding: '12px 16px' }}>
+                {/* Summary strip */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  {[
+                    { label: 'Estimated', value: budget?.summary?.estimatedTotal ?? budget?.totalEstimated ?? null, color: 'var(--navy-900)' },
+                    { label: 'Spent', value: budget?.summary?.actualTotal ?? 0, color: 'var(--navy-900)' },
+                    { label: 'Left', value: budget?.summary?.delta ?? null, color: (budget?.summary?.delta ?? 0) >= 0 ? 'var(--success-700)' : 'var(--error)' },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} style={{ background: 'var(--navy-50)', borderRadius: 10, padding: '8px 10px', textAlign: 'center' }}>
+                      <p style={{ margin: 0, fontSize: 11, color: 'var(--navy-500)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
+                      <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color }}>{money(value, currency)}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Per-category predictions */}
+                {!budget && (
+                  <p style={{ margin: 0, fontSize: 12, color: 'var(--navy-400)', textAlign: 'center' }}>No AI estimate yet — you can still track spending below.</p>
+                )}
+                <div style={{ display: 'grid', gap: 5 }}>
+                  {displayCats.map((cat) => {
+                    const est = estimatedMap.get(cat) ?? 0;
+                    const act = actualMap.get(cat) ?? 0;
+                    const delta = est - act;
+                    const hasData = est > 0 || act > 0;
+                    if (!hasData) return null;
+                    return (
+                      <div key={cat} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 8, alignItems: 'center', padding: '7px 10px', borderRadius: 9, background: 'var(--navy-50)', fontSize: 13 }}>
+                        <p style={{ margin: 0, fontWeight: 600, color: 'var(--navy-800)' }}>{labelCat(cat)}</p>
+                        <p style={{ margin: 0, color: 'var(--navy-500)' }}>Est {money(est || null, currency)}</p>
+                        <p style={{ margin: 0, color: 'var(--navy-700)', fontWeight: 600 }}>Spent {money(act || null, currency)}</p>
+                        <p style={{ margin: 0, fontWeight: 700, color: delta >= 0 ? 'var(--success-600)' : 'var(--error)', minWidth: 56, textAlign: 'right' }}>
+                          {est > 0 ? money(delta, currency) : '—'}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Recent entries */}
+                {(budget?.entries?.length || 0) > 0 && (
+                  <div>
+                    <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 700, color: 'var(--navy-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent expenses</p>
+                    <div style={{ display: 'grid', gap: 3 }}>
+                      {[...(budget?.entries || [])].reverse().slice(0, 8).map((entry) => (
+                        <div key={entry.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 9, border: '1px solid var(--navy-100)', fontSize: 13 }}>
+                          <p style={{ margin: 0, flex: 1, color: 'var(--navy-700)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <span style={{ fontWeight: 600, textTransform: 'capitalize' }}>{entry.category}</span>
+                            {' · '}{money(entry.amount, entry.currency || currency)}
+                            {entry.note ? ` · ${entry.note}` : ''}
+                          </p>
+                          <p style={{ margin: 0, color: 'var(--navy-400)', flexShrink: 0 }}>{entry.date}</p>
+                          <button
+                            className="icon-btn"
+                            title="Delete expense"
+                            disabled={qDeletingId === entry.id}
+                            style={{ flexShrink: 0 }}
+                            onClick={async () => {
+                              setQDeletingId(entry.id);
+                              try { await deleteBudgetEntry(entry.id); } finally { setQDeletingId(null); }
+                            }}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Quick add form */}
+              <div className="chat-input-bar" style={{ flexDirection: 'column', gap: 8, alignItems: 'stretch', padding: '10px 16px' }}>
+                <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: 'var(--navy-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Add expense</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 100px', gap: 6 }}>
+                  <select
+                    className="profile-input"
+                    style={{ fontSize: 12, padding: '5px 8px', height: 32 }}
+                    value={qCat}
+                    onChange={(e) => setQCat(e.target.value)}
+                  >
+                    {allCats.map((c) => <option key={c} value={c}>{labelCat(c)}</option>)}
+                  </select>
+                  <input
+                    className="profile-input"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Amount"
+                    value={qAmount}
+                    onChange={(e) => setQAmount(e.target.value)}
+                    style={{ fontSize: 12, padding: '5px 8px', height: 32 }}
+                  />
+                  <input
+                    className="profile-input"
+                    type="date"
+                    value={qDate}
+                    onChange={(e) => setQDate(e.target.value)}
+                    style={{ fontSize: 12, padding: '5px 8px', height: 32 }}
+                  />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6 }}>
+                  <input
+                    className="profile-input"
+                    placeholder="Note (optional)"
+                    value={qNote}
+                    onChange={(e) => setQNote(e.target.value)}
+                    style={{ fontSize: 12, padding: '5px 8px', height: 32 }}
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Enter') {
+                        const parsed = Number(qAmount);
+                        if (!qDate || !parsed || parsed <= 0) return;
+                        setQSaving(true);
+                        try { await addBudgetEntry({ category: qCat, amount: parsed, date: qDate, note: qNote }); setQAmount(''); setQNote(''); } finally { setQSaving(false); }
+                      }
+                    }}
+                  />
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={qSaving || !qAmount || Number(qAmount) <= 0 || !qDate}
+                    onClick={async () => {
+                      const parsed = Number(qAmount);
+                      if (!qDate || !parsed || parsed <= 0) return;
+                      setQSaving(true);
+                      try { await addBudgetEntry({ category: qCat, amount: parsed, date: qDate, note: qNote }); setQAmount(''); setQNote(''); } finally { setQSaving(false); }
+                    }}
+                  >
+                    <Plus size={13} /> {qSaving ? 'Saving...' : 'Add'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          );
+        })()}
+
         {notesOpen && (
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.95 }}

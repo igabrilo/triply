@@ -10,7 +10,6 @@ import PlanSection from '@components/dashboard/PlanSection';
 import ActivitiesSection from '@components/dashboard/ActivitiesSection';
 import FlightsSection from '@components/dashboard/FlightsSection';
 import StaysSection from '@components/dashboard/StaysSection';
-import BudgetSection from '@components/dashboard/BudgetSection';
 import WeatherSection from '@components/dashboard/WeatherSection';
 import MapSection from '@components/dashboard/MapSection';
 import ProfileSection from '@components/dashboard/ProfileSection';
@@ -201,7 +200,6 @@ export default function Dashboard() {
       case 'activities': return <ActivitiesSection />;
       case 'flights': return <FlightsSection />;
       case 'stays': return <StaysSection />;
-      case 'budget': return <BudgetSection />;
       case 'weather': return <WeatherSection />;
       case 'map': return <MapSection />;
       case 'profile': return <ProfileSection />;
