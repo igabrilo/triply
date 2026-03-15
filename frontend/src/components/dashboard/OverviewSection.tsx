@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, CloudSun, FileText, PiggyBank, Plane, Bed, X, Plus, Trash2 } from 'lucide-react';
+import { ArrowRight, CloudSun, FileText, PiggyBank, Plane, Bed, X, Plus, Trash2, Lightbulb } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
 import { buildFallbackImage, buildAirlineLogoUrl, buildPlaceImage, buildWeatherImage, buildStayPhotoProxyUrl } from '@/utils/mediaImages';
 import SidebarMap from '@components/dashboard/SidebarMap';
@@ -352,6 +352,13 @@ export default function OverviewSection() {
     setActiveTab('weather');
   };
 
+  const openTipsTab = () => {
+    setFocusFlightId(null);
+    setFocusStayId(null);
+    setSelectedDay(null);
+    setActiveTab('tips');
+  };
+
   const openPrimaryFlight = () => {
     setFocusStayId(null);
     if (primaryFlight?.id) {
@@ -636,6 +643,47 @@ export default function OverviewSection() {
               {firstWeather
                 ? `${firstWeather.icon ? `${firstWeather.icon} ` : ''}${firstWeather.condition || 'Forecast'} - ${firstWeather.highTempC ?? '-'} C/${firstWeather.lowTempC ?? '-'} C`
                 : 'Forecast is informational and read-only. Users can refresh data, not edit conditions.'}
+            </p>
+          </div>
+          <ArrowRight size={14} style={{ color: 'var(--navy-400)' }} />
+        </button>
+
+        <button
+          type="button"
+          className="item-card overview-print-block"
+          onClick={openTipsTab}
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            width: '100%',
+            textAlign: 'left',
+            cursor: 'pointer',
+            background: 'var(--surface)',
+            border: '1.5px solid var(--navy-100)',
+          }}
+        >
+          <div
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: 12,
+              border: '1px solid var(--navy-100)',
+              background: 'var(--surface)',
+              display: 'grid',
+              placeItems: 'center',
+              overflow: 'hidden',
+              flexShrink: 0,
+            }}
+          >
+            <Lightbulb size={16} style={{ color: 'var(--warning)' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--navy-900)' }}>Tips</p>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--navy-500)' }}>
+              {currentTrip.tips.length > 0
+                ? `${currentTrip.tips.length} local tips available · ${currentTrip.tips[0].title}`
+                : 'Destination tips are being prepared.'}
             </p>
           </div>
           <ArrowRight size={14} style={{ color: 'var(--navy-400)' }} />

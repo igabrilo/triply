@@ -14,6 +14,7 @@ const tabs: { id: TabId; label: string }[] = [
   { id: 'flights', label: 'Flights' },
   { id: 'stays', label: 'Stays' },
   { id: 'weather', label: 'Weather' },
+  { id: 'tips', label: 'Tips' },
   { id: 'map', label: 'Map' },
 ];
 

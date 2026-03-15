@@ -9,6 +9,7 @@ import type {
   Flight,
   Stay,
   SuggestedActivity,
+  TripTip,
   TripWeatherDay,
   BudgetHint,
   OverviewData,
@@ -145,6 +146,7 @@ const phaseLabels: Record<string, string> = {
   generating_flights: 'Searching flights...',
   generating_activities: 'Curating activity ideas...',
   generating_weather: 'Checking weather forecast...',
+  generating_tips: 'Collecting destination tips...',
   generating_budget: 'Estimating budget...',
   generating_overview: 'Creating overview and destination hero...',
 };
@@ -298,6 +300,16 @@ function transformWeather(backendWeather: any[]): TripWeatherDay[] {
   }));
 }
 
+function transformTips(backendTips: any[]): TripTip[] {
+  return (backendTips || []).map((tip: any) => ({
+    category: tip.category || 'useful_links',
+    title: tip.title || '',
+    description: tip.description || '',
+    linkUrl: tip.link_url || tip.linkUrl || '',
+    linkLabel: tip.link_label || tip.linkLabel || '',
+  }));
+}
+
 function transformBudget(backendBudget: any): BudgetHint | null {
   if (!backendBudget) return null;
   const currency = backendBudget.currency || backendBudget.summary?.currency || 'EUR';
@@ -379,6 +391,7 @@ function mapBackendTripToTrip(t: any): Trip {
     plan: transformDays(t.days || []),
     activities: transformActivities(aiGenerated.activities || []),
     weather: transformWeather(aiGenerated.weather || []),
+    tips: transformTips(aiGenerated.tips || []),
     budget: transformBudget(mergedBudget),
     overview: transformOverview(aiGenerated.overview),
     selectedFlightId: t.selectedFlightId || null,
@@ -449,6 +462,7 @@ export const useTripStore = create<TripState>((set, get) => ({
         plan: [],
         activities: [],
         weather: [],
+        tips: [],
         budget: null,
         overview: null,
         selectedFlightId: null,
@@ -488,6 +502,8 @@ export const useTripStore = create<TripState>((set, get) => ({
             updates.activities = transformActivities(sectionData);
           } else if (section === 'weather') {
             updates.weather = transformWeather(sectionData);
+          } else if (section === 'tips') {
+            updates.tips = transformTips(sectionData);
           } else if (section === 'budget') {
             updates.budget = transformBudget(sectionData);
           } else if (section === 'overview') {
@@ -755,6 +771,8 @@ export const useTripStore = create<TripState>((set, get) => ({
         updates.activities = transformActivities(listData);
       } else if (section === 'weather') {
         updates.weather = transformWeather(listData);
+      } else if (section === 'tips') {
+        updates.tips = transformTips(listData);
       } else if (section === 'budget') {
         updates.budget = transformBudget(data);
       } else if (section === 'overview') {
