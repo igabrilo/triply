@@ -126,6 +126,23 @@ class GeneratedBudget(BaseModel):
 
 
 # ------------------------------------------------------------------
+# Destination tips
+# ------------------------------------------------------------------
+class TipSchema(BaseModel):
+    category: str = Field(
+        description="transport | free_activities | safety | money | connectivity | food | customs | useful_links"
+    )
+    title: str
+    description: str
+    link_url: Optional[str] = None
+    link_label: Optional[str] = None
+
+
+class GeneratedTips(BaseModel):
+    tips: list[TipSchema]
+
+
+# ------------------------------------------------------------------
 # Overview summary + hero image prompt
 # ------------------------------------------------------------------
 class GeneratedOverview(BaseModel):

@@ -27,6 +27,7 @@ from app.schemas.ai_schemas import (
     GeneratedOverview,
     GeneratedPlan,
     GeneratedStays,
+    GeneratedTips,
     GeneratedWeather,
 )
 
@@ -249,6 +250,7 @@ def generate_trip_sections(form_data: dict) -> Generator[tuple[str, object], Non
     yield ('activities', generate_activities(form_data))
     yield ('weather', generate_weather(form_data))
     yield ('budget', generate_budget(form_data))
+    yield ('tips', generate_tips(form_data))
     yield ('overview', generate_overview(form_data))
 
 
@@ -351,6 +353,40 @@ def generate_budget(form_data: dict, extra_instruction: str | None = None) -> Ge
             if attempt == MAX_RETRIES:
                 raise
     raise RuntimeError("Budget generation failed after retries")
+
+
+def generate_tips(form_data: dict, extra_instruction: str | None = None) -> GeneratedTips:
+    client = _get_client()
+    model = current_app.config.get('OPENAI_MODEL_GENERATION', 'gpt-5.2')
+
+    for attempt in range(1 + MAX_RETRIES):
+        try:
+            user_prompt = (
+                _build_trip_user_prompt(form_data)
+                + "\n\nReturn ONLY practical destination tips. Include local transport availability and price guidance, "
+                "free museums/activities, safety, money, connectivity, customs, food etiquette, and useful official links where possible."
+            )
+            if extra_instruction:
+                user_prompt += f"\n\nAdditional instruction: {extra_instruction}"
+
+            resp = client.beta.chat.completions.parse(
+                model=model,
+                messages=[
+                    {"role": "system", "content": _build_trip_system_prompt()},
+                    {"role": "user", "content": user_prompt},
+                ],
+                response_format=GeneratedTips,
+                temperature=0.5,
+            )
+            parsed = resp.choices[0].message.parsed
+            if parsed is None:
+                raise ValueError(f"Model refused or returned no content: {resp.choices[0].message.refusal}")
+            return parsed
+        except (ValidationError, Exception) as exc:
+            logger.warning("Tips generation attempt %d failed: %s", attempt + 1, exc)
+            if attempt == MAX_RETRIES:
+                raise
+    raise RuntimeError("Tips generation failed after retries")
 
 
 def generate_overview(form_data: dict, extra_instruction: str | None = None) -> GeneratedOverview:

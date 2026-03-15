@@ -10,8 +10,8 @@ import PlanSection from '@components/dashboard/PlanSection';
 import ActivitiesSection from '@components/dashboard/ActivitiesSection';
 import FlightsSection from '@components/dashboard/FlightsSection';
 import StaysSection from '@components/dashboard/StaysSection';
-import BudgetSection from '@components/dashboard/BudgetSection';
 import WeatherSection from '@components/dashboard/WeatherSection';
+import TipsSection from '@components/dashboard/TipsSection';
 import MapSection from '@components/dashboard/MapSection';
 import ProfileSection from '@components/dashboard/ProfileSection';
 import QuickTweaks from '@components/dashboard/QuickTweaks';
@@ -28,6 +28,7 @@ const generationSteps = [
   { key: 'flights', icon: Plane, label: 'Searching flights' },
   { key: 'activities', icon: Sparkles, label: 'Generating activities' },
   { key: 'weather', icon: Sparkles, label: 'Preparing weather' },
+  { key: 'tips', icon: Sparkles, label: 'Collecting destination tips' },
   { key: 'overview', icon: Sparkles, label: 'Creating overview' },
 ];
 
@@ -39,6 +40,7 @@ function GeneratingView() {
   const hasFlights = (currentTrip?.flights?.length ?? 0) > 0;
   const hasActivities = (currentTrip?.activities?.length ?? 0) > 0;
   const hasWeather = (currentTrip?.weather?.length ?? 0) > 0;
+  const hasTips = (currentTrip?.tips?.length ?? 0) > 0;
   const hasOverview = !!currentTrip?.overview;
   const sectionDone: Record<string, boolean> = {
     plan: hasPlan,
@@ -46,6 +48,7 @@ function GeneratingView() {
     flights: hasFlights,
     activities: hasActivities,
     weather: hasWeather,
+    tips: hasTips,
     overview: hasOverview,
   };
 
@@ -86,7 +89,8 @@ function GeneratingView() {
             (step.key === 'flights' && hasPlan && hasStays && !hasFlights) ||
             (step.key === 'activities' && hasPlan && hasStays && hasFlights && !hasActivities) ||
             (step.key === 'weather' && hasPlan && hasStays && hasFlights && hasActivities && !hasWeather) ||
-            (step.key === 'overview' && hasPlan && hasStays && hasFlights && hasActivities && hasWeather && !hasOverview)
+            (step.key === 'tips' && hasPlan && hasStays && hasFlights && hasActivities && hasWeather && !hasTips) ||
+            (step.key === 'overview' && hasPlan && hasStays && hasFlights && hasActivities && hasWeather && hasTips && !hasOverview)
           );
 
           return (
@@ -181,6 +185,7 @@ export default function Dashboard() {
     currentTrip.stays.length > 0 ||
     currentTrip.activities.length > 0 ||
     currentTrip.weather.length > 0 ||
+    currentTrip.tips.length > 0 ||
     !!currentTrip.overview;
 
   // Show generating view when generating and no content yet
@@ -201,8 +206,8 @@ export default function Dashboard() {
       case 'activities': return <ActivitiesSection />;
       case 'flights': return <FlightsSection />;
       case 'stays': return <StaysSection />;
-      case 'budget': return <BudgetSection />;
       case 'weather': return <WeatherSection />;
+      case 'tips': return <TipsSection />;
       case 'map': return <MapSection />;
       case 'profile': return <ProfileSection />;
       default: return <OverviewSection />;

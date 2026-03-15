@@ -34,6 +34,14 @@ function numericPrice(range: string): number {
   return m ? parseInt(m[1].replace(',', ''), 10) : Infinity;
 }
 
+function lowestPrice(priceRange: string): string {
+  const s = (priceRange || '').trim();
+  if (!s) return '-';
+  const parts = s.split(/\s*[-\u2013\u2014−]\s*/);
+  const lowest = (parts.length > 1 ? parts[0].trim() : s).replace(/^~\s*/, '');
+  return `from ${lowest}`;
+}
+
 function parseDuration(value: string): number {
   const v = (value || '').replace(/^~\s*/, '');
   const h = v.match(/(\d+)\s*h/);
@@ -234,7 +242,7 @@ export default function FlightsSection() {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
-                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--navy-900)' }}>{flight.priceRange || '-'}</p>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--navy-900)' }}>{lowestPrice(flight.priceRange)}</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <button
                     className={`btn btn-sm ${flight.isSelected ? 'btn-secondary' : 'btn-ghost'}`}

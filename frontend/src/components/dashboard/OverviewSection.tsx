@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, CloudSun, FileText, PiggyBank, Plane, Bed, RotateCcw, Upload, ImagePlus, Link2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowRight, CloudSun, FileText, PiggyBank, Plane, Bed, X, Plus, Trash2, Lightbulb } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
 import { buildFallbackImage, buildAirlineLogoUrl, buildPlaceImage, buildWeatherImage, buildStayPhotoProxyUrl } from '@/utils/mediaImages';
 import SidebarMap from '@components/dashboard/SidebarMap';
@@ -188,75 +189,73 @@ function buildPersonalizedExpertAdvice(params: {
   return deduped.slice(0, 6);
 }
 
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.readAsDataURL(file);
-  });
+function normalizeCat(value: string): string {
+  return (value || 'other').trim().toLowerCase();
 }
 
-function loadImageFromSrc(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Failed to load image'));
-    img.src = src;
-  });
-}
-
-async function optimizeImageFile(file: File): Promise<string> {
-  const rawDataUrl = await readFileAsDataUrl(file);
-  try {
-    const img = await loadImageFromSrc(rawDataUrl);
-    const maxW = 1600;
-    const maxH = 1000;
-    const ratio = Math.min(maxW / img.width, maxH / img.height, 1);
-    const w = Math.max(1, Math.round(img.width * ratio));
-    const h = Math.max(1, Math.round(img.height * ratio));
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return rawDataUrl;
-    ctx.drawImage(img, 0, 0, w, h);
-    return canvas.toDataURL('image/jpeg', 0.86);
-  } catch {
-    return rawDataUrl;
-  }
+function labelCat(value: string): string {
+  const n = normalizeCat(value);
+  return n.charAt(0).toUpperCase() + n.slice(1);
 }
 
 export default function OverviewSection() {
   const {
     currentTrip,
     saveTripNotes,
-    saveOverviewImage,
-    saveOverviewDescription,
+    addBudgetEntry,
+    deleteBudgetEntry,
     setActiveTab,
     setSelectedDay,
     setFocusFlightId,
     setFocusStayId,
   } = useTripStore();
-  const [notes, setNotes] = useState('');
-  const [travelDescription, setTravelDescription] = useState('');
-  const [savingNotes, setSavingNotes] = useState(false);
-  const [savingTravelDescription, setSavingTravelDescription] = useState(false);
-  const [savingImage, setSavingImage] = useState(false);
-  const [travelDescriptionError, setTravelDescriptionError] = useState('');
-  const [imageError, setImageError] = useState('');
-  const [imageMenuOpen, setImageMenuOpen] = useState(false);
   const [coverImageSrc, setCoverImageSrc] = useState('');
   const [flightLogoBroken, setFlightLogoBroken] = useState(false);
   const [stayThumbBroken, setStayThumbBroken] = useState(false);
   const [weatherThumbBroken, setWeatherThumbBroken] = useState(false);
-  const notesRef = useRef<HTMLTextAreaElement | null>(null);
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [saveNotesError, setSaveNotesError] = useState('');
+  const hasUserEditedNotes = useRef(false);
+
+  const [budgetOpen, setBudgetOpen] = useState(false);
+  const [qCat, setQCat] = useState('other');
+  const [qAmount, setQAmount] = useState('');
+  const [qDate, setQDate] = useState('');
+  const [qNote, setQNote] = useState('');
+  const [qSaving, setQSaving] = useState(false);
+  const [qDeletingId, setQDeletingId] = useState<string | null>(null);
   const overview = currentTrip?.overview;
+  const tripId = currentTrip?.id;
 
   useEffect(() => {
     setNotes(overview?.notes || '');
-  }, [overview?.notes]);
+    hasUserEditedNotes.current = false;
+    setSaveNotesError('');
+  }, [tripId]);
+
+  useEffect(() => {
+    if (currentTrip?.formData?.startDate) {
+      setQDate(currentTrip.formData.startDate);
+    }
+  }, [tripId, currentTrip?.formData?.startDate]);
+
+  useEffect(() => {
+    if (!tripId || !hasUserEditedNotes.current) return;
+    const t = window.setTimeout(async () => {
+      setSavingNotes(true);
+      setSaveNotesError('');
+      try {
+        await saveTripNotes(notes);
+      } catch {
+        setSaveNotesError('Could not save notes. Please try again.');
+      } finally {
+        setSavingNotes(false);
+      }
+    }, 1500);
+    return () => window.clearTimeout(t);
+  }, [notes, tripId, saveTripNotes]);
 
   if (!currentTrip) return null;
 
@@ -341,11 +340,6 @@ export default function OverviewSection() {
   }, [coverImageUrl]);
 
   useEffect(() => {
-    const stored = (overview?.travelDescription || '').trim();
-    setTravelDescription(stored || generatedTravelDescription);
-  }, [overview?.travelDescription, generatedTravelDescription]);
-
-  useEffect(() => {
     setFlightLogoBroken(false);
     setStayThumbBroken(false);
     setWeatherThumbBroken(false);
@@ -356,6 +350,13 @@ export default function OverviewSection() {
     setFocusStayId(null);
     setSelectedDay(null);
     setActiveTab('weather');
+  };
+
+  const openTipsTab = () => {
+    setFocusFlightId(null);
+    setFocusStayId(null);
+    setSelectedDay(null);
+    setActiveTab('tips');
   };
 
   const openPrimaryFlight = () => {
@@ -376,63 +377,17 @@ export default function OverviewSection() {
     setActiveTab('stays');
   };
 
-  const applyOverviewImageUrl = async (url: string) => {
-    const trimmed = (url || '').trim();
-    if (!trimmed) return;
-    setSavingImage(true);
-    setImageError('');
-    try {
-      await saveOverviewImage(trimmed);
-      setImageMenuOpen(false);
-    } catch (err: any) {
-      setImageError(err?.response?.data?.message || 'Could not update image URL.');
-    } finally {
-      setSavingImage(false);
-    }
-  };
+  const travelDescriptionSummary = (overview?.travelDescription || '').trim() || generatedTravelDescription;
 
-  const resetOverviewImage = async () => {
-    setSavingImage(true);
-    setImageError('');
-    try {
-      await saveOverviewImage('');
-      setImageMenuOpen(false);
-    } catch (err: any) {
-      setImageError(err?.response?.data?.message || 'Could not reset image.');
-    } finally {
-      setSavingImage(false);
-    }
-  };
-
-  const handleUploadImage = async (file: File | undefined) => {
-    if (!file) return;
-    setSavingImage(true);
-    setImageError('');
-    try {
-      const dataUrl = await optimizeImageFile(file);
-      if (dataUrl.length > 1_900_000) {
-        throw new Error('Image is too large. Please pick a smaller image.');
-      }
-      await saveOverviewImage(dataUrl);
-      setImageMenuOpen(false);
-    } catch (err: any) {
-      setImageError(err?.response?.data?.message || err?.message || 'Could not upload image.');
-    } finally {
-      setSavingImage(false);
-    }
-  };
-
-  const saveTravelDescription = async () => {
-    setSavingTravelDescription(true);
-    setTravelDescriptionError('');
-    try {
-      await saveOverviewDescription(travelDescription.trim());
-    } catch (err: any) {
-      setTravelDescriptionError(err?.response?.data?.message || 'Could not save travel description.');
-    } finally {
-      setSavingTravelDescription(false);
-    }
-  };
+  const primaryFlightPriceDisplay = primaryFlight
+    ? (() => {
+      const pr = (primaryFlight.priceRange || '').trim();
+      if (!pr) return '-';
+      const parts = pr.split(/\s*[-\u2013\u2014−]\s*/);
+      const lowest = (parts.length > 1 ? parts[0].trim() : pr).replace(/^~\s*/, '');
+      return `from ${lowest}`;
+    })()
+    : null;
 
   return (
     <div className="card overview-print" style={{ padding: 24 }}>
@@ -492,89 +447,8 @@ export default function OverviewSection() {
               <p style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>{destination}</p>
               <p style={{ margin: 0, fontSize: 13, opacity: 0.95 }}>{dateRange}</p>
             </div>
-            <div className="print-hide" style={{ position: 'absolute', right: 12, bottom: 12, zIndex: 4 }}>
-              <button
-                className="btn btn-ghost btn-sm"
-                disabled={savingImage}
-                onClick={() => setImageMenuOpen((v) => !v)}
-                style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: 999,
-                  padding: 0,
-                  background: 'rgba(15, 23, 42, 0.58)',
-                  border: '1px solid rgba(255,255,255,0.45)',
-                  color: '#fff',
-                  backdropFilter: 'blur(2px)',
-                }}
-                title="Change overview image"
-              >
-                <ImagePlus size={16} />
-              </button>
-
-              {imageMenuOpen && (
-                <div
-                  className="item-card"
-                  style={{
-                    position: 'absolute',
-                    right: 0,
-                    bottom: 'calc(100% + 8px)',
-                    minWidth: 186,
-                    padding: 8,
-                    display: 'grid',
-                    gap: 6,
-                    background: 'rgba(255,255,255,0.97)',
-                  }}
-                >
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    disabled={savingImage}
-                    onClick={() => imageInputRef.current?.click()}
-                    style={{ justifyContent: 'flex-start' }}
-                  >
-                    <Upload size={14} /> Upload photo
-                  </button>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    disabled={savingImage}
-                    onClick={async () => {
-                      const raw = window.prompt('Paste image URL');
-                      if (!raw) return;
-                      await applyOverviewImageUrl(raw);
-                    }}
-                    style={{ justifyContent: 'flex-start' }}
-                  >
-                    <Link2 size={14} /> Paste URL
-                  </button>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    disabled={savingImage}
-                    onClick={resetOverviewImage}
-                    style={{ justifyContent: 'flex-start' }}
-                  >
-                    <RotateCcw size={14} /> Reset image
-                  </button>
-                </div>
-              )}
-
-              <input
-                ref={imageInputRef}
-                type="file"
-                accept="image/*"
-                disabled={savingImage}
-                style={{ display: 'none' }}
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  e.currentTarget.value = '';
-                  await handleUploadImage(file);
-                }}
-              />
-            </div>
           </div>
         </div>
-        {imageError && (
-          <p className="print-hide" style={{ margin: 0, fontSize: 12, color: 'var(--error)' }}>{imageError}</p>
-        )}
 
         <div
           className="item-card overview-print-block"
@@ -601,29 +475,9 @@ export default function OverviewSection() {
             <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: 'var(--navy-900)', letterSpacing: '0.02em' }}>
               Travel Description
             </p>
-            <textarea
-              className="profile-input print-hide"
-              value={travelDescription}
-              onChange={(e) => setTravelDescription(e.target.value)}
-              rows={5}
-              placeholder="Write a compact trip description..."
-              style={{ width: '100%', resize: 'vertical', fontSize: 13, lineHeight: 1.45 }}
-            />
-            <div className="print-only" style={{ marginTop: 4, fontSize: 13, color: 'var(--navy-700)', whiteSpace: 'pre-wrap' }}>
-              {travelDescription || generatedTravelDescription}
-            </div>
-            <div className="print-hide" style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                className="btn btn-ghost btn-sm"
-                disabled={savingTravelDescription}
-                onClick={saveTravelDescription}
-              >
-                {savingTravelDescription ? 'Saving...' : 'Save travel description'}
-              </button>
-            </div>
-            {travelDescriptionError && (
-              <p className="print-hide" style={{ margin: 0, fontSize: 12, color: 'var(--error)' }}>{travelDescriptionError}</p>
-            )}
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--navy-700)', whiteSpace: 'pre-wrap' }}>
+              {travelDescriptionSummary}
+            </p>
           </div>
         </div>
 
@@ -671,7 +525,7 @@ export default function OverviewSection() {
             <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--navy-900)' }}>Primary flight</p>
             <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--navy-500)' }}>
               {primaryFlight
-                ? `${primaryFlight.airline} - ${primaryFlight.departure} -> ${primaryFlight.arrival} - ${primaryFlight.priceRange}`
+                ? `${primaryFlight.airline} - ${primaryFlight.departure} -> ${primaryFlight.arrival} - ${primaryFlightPriceDisplay}`
                 : 'No flight selected yet'}
             </p>
           </div>
@@ -794,6 +648,47 @@ export default function OverviewSection() {
           <ArrowRight size={14} style={{ color: 'var(--navy-400)' }} />
         </button>
 
+        <button
+          type="button"
+          className="item-card overview-print-block"
+          onClick={openTipsTab}
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            width: '100%',
+            textAlign: 'left',
+            cursor: 'pointer',
+            background: 'var(--surface)',
+            border: '1.5px solid var(--navy-100)',
+          }}
+        >
+          <div
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: 12,
+              border: '1px solid var(--navy-100)',
+              background: 'var(--surface)',
+              display: 'grid',
+              placeItems: 'center',
+              overflow: 'hidden',
+              flexShrink: 0,
+            }}
+          >
+            <Lightbulb size={16} style={{ color: 'var(--warning)' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--navy-900)' }}>Tips</p>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--navy-500)' }}>
+              {currentTrip.tips.length > 0
+                ? `${currentTrip.tips.length} local tips available · ${currentTrip.tips[0].title}`
+                : 'Destination tips are being prepared.'}
+            </p>
+          </div>
+          <ArrowRight size={14} style={{ color: 'var(--navy-400)' }} />
+        </button>
+
         <div className="print-hide">
           <SidebarMap />
         </div>
@@ -802,10 +697,7 @@ export default function OverviewSection() {
           <button
             type="button"
             className="item-card overview-print-block"
-            onClick={() => {
-              setSelectedDay(null);
-              setActiveTab('budget');
-            }}
+            onClick={() => setBudgetOpen(true)}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -826,11 +718,12 @@ export default function OverviewSection() {
                   : 'No spending tracked yet'}
               </p>
             </div>
+            <ArrowRight size={14} style={{ color: 'var(--navy-400)', marginLeft: 'auto' }} />
           </button>
           <button
             type="button"
             className="item-card overview-print-block"
-            onClick={() => requestAnimationFrame(() => notesRef.current?.focus())}
+            onClick={() => setNotesOpen(true)}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -846,42 +739,11 @@ export default function OverviewSection() {
             <div>
               <p style={{ margin: 0, fontSize: 12, color: 'var(--navy-500)' }}>Notes</p>
               <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--navy-900)' }}>
-                Central trip notes
+                {(overview?.notes || '').trim() ? 'View trip notes' : 'Add trip notes'}
               </p>
             </div>
+            <ArrowRight size={14} style={{ color: 'var(--navy-400)', marginLeft: 'auto' }} />
           </button>
-        </div>
-
-        <div className="item-card overview-print-block" style={{ display: 'grid', gap: 8 }}>
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: 'var(--navy-900)' }}>Notes</p>
-          <textarea
-            className="profile-input print-hide"
-            ref={notesRef}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={6}
-            placeholder="Write trip-level notes here..."
-            style={{ width: '100%', resize: 'vertical' }}
-          />
-          <div className="print-only" style={{ marginTop: 4, fontSize: 13, color: 'var(--navy-700)', whiteSpace: 'pre-wrap' }}>
-            {notes || 'No notes added.'}
-          </div>
-          <div className="print-hide" style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button
-              className="btn btn-ghost btn-sm"
-              disabled={savingNotes}
-              onClick={async () => {
-                setSavingNotes(true);
-                try {
-                  await saveTripNotes(notes);
-                } finally {
-                  setSavingNotes(false);
-                }
-              }}
-            >
-              {savingNotes ? 'Saving...' : 'Save notes'}
-            </button>
-          </div>
         </div>
 
         {expertAdvice.length > 0 && (
@@ -904,6 +766,280 @@ export default function OverviewSection() {
           <span>Page <span className="print-page-number" /></span>
         </div>
       </div>
+
+      <AnimatePresence>
+        {budgetOpen && (() => {
+          const budget = currentTrip.budget;
+          const currency = budget?.currency || 'EUR';
+          const allCats = Array.from(new Set([
+            'transport', 'accommodation', 'food', 'activities', 'shopping', 'other',
+            ...(budget?.categories || []).map((c) => normalizeCat(c.category || 'other')),
+          ]));
+          const estimatedMap = new Map<string, number>();
+          for (const c of budget?.categories || []) {
+            estimatedMap.set(normalizeCat(c.category || 'other'), Number(c.estimatedAmount ?? 0));
+          }
+          const actualMap = new Map<string, number>();
+          for (const e of budget?.entries || []) {
+            const k = normalizeCat(e.category || 'other');
+            actualMap.set(k, (actualMap.get(k) || 0) + Number(e.amount || 0));
+          }
+          const displayCats = Array.from(new Set([
+            ...allCats,
+            ...Array.from(actualMap.keys()),
+            ...Array.from(estimatedMap.keys()),
+          ]));
+
+          return (
+            <motion.div
+              key="budget-popup"
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.95 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="chat-panel print-hide"
+              style={{ right: 'auto', left: 24, display: 'flex', flexDirection: 'column', width: 440, maxHeight: 680 }}
+            >
+              <div className="chat-header">
+                <div className="chat-header-title">
+                  <PiggyBank size={15} style={{ color: 'var(--success-600)' }} />
+                  Budget
+                </div>
+                <button onClick={() => setBudgetOpen(false)} className="icon-btn" aria-label="Close budget">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12, padding: '12px 16px' }}>
+                {/* Summary strip */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  {[
+                    { label: 'Estimated', value: budget?.summary?.estimatedTotal ?? budget?.totalEstimated ?? null, color: 'var(--navy-900)' },
+                    { label: 'Spent', value: budget?.summary?.actualTotal ?? 0, color: 'var(--navy-900)' },
+                    { label: 'Left', value: budget?.summary?.delta ?? null, color: (budget?.summary?.delta ?? 0) >= 0 ? 'var(--success-700)' : 'var(--error)' },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} style={{ background: 'var(--navy-50)', borderRadius: 10, padding: '8px 10px', textAlign: 'center' }}>
+                      <p style={{ margin: 0, fontSize: 11, color: 'var(--navy-500)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
+                      <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color }}>{money(value, currency)}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Per-category predictions */}
+                {!budget && (
+                  <p style={{ margin: 0, fontSize: 12, color: 'var(--navy-400)', textAlign: 'center' }}>No AI estimate yet — you can still track spending below.</p>
+                )}
+                <div style={{ display: 'grid', gap: 5 }}>
+                  {displayCats.map((cat) => {
+                    const est = estimatedMap.get(cat) ?? 0;
+                    const act = actualMap.get(cat) ?? 0;
+                    const delta = est - act;
+                    const hasData = est > 0 || act > 0;
+                    if (!hasData) return null;
+                    return (
+                      <div key={cat} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 8, alignItems: 'center', padding: '7px 10px', borderRadius: 9, background: 'var(--navy-50)', fontSize: 13 }}>
+                        <p style={{ margin: 0, fontWeight: 600, color: 'var(--navy-800)' }}>{labelCat(cat)}</p>
+                        <p style={{ margin: 0, color: 'var(--navy-500)' }}>Est {money(est || null, currency)}</p>
+                        <p style={{ margin: 0, color: 'var(--navy-700)', fontWeight: 600 }}>Spent {money(act || null, currency)}</p>
+                        <p style={{ margin: 0, fontWeight: 700, color: delta >= 0 ? 'var(--success-600)' : 'var(--error)', minWidth: 56, textAlign: 'right' }}>
+                          {est > 0 ? money(delta, currency) : '—'}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Recent entries */}
+                {(budget?.entries?.length || 0) > 0 && (
+                  <div>
+                    <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 700, color: 'var(--navy-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent expenses</p>
+                    <div style={{ display: 'grid', gap: 3 }}>
+                      {[...(budget?.entries || [])].reverse().slice(0, 8).map((entry) => (
+                        <div key={entry.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 9, border: '1px solid var(--navy-100)', fontSize: 13 }}>
+                          <p style={{ margin: 0, flex: 1, color: 'var(--navy-700)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <span style={{ fontWeight: 600, textTransform: 'capitalize' }}>{entry.category}</span>
+                            {' · '}{money(entry.amount, entry.currency || currency)}
+                            {entry.note ? ` · ${entry.note}` : ''}
+                          </p>
+                          <p style={{ margin: 0, color: 'var(--navy-400)', flexShrink: 0 }}>{entry.date}</p>
+                          <button
+                            className="icon-btn"
+                            title="Delete expense"
+                            disabled={qDeletingId === entry.id}
+                            style={{ flexShrink: 0 }}
+                            onClick={async () => {
+                              setQDeletingId(entry.id);
+                              try { await deleteBudgetEntry(entry.id); } finally { setQDeletingId(null); }
+                            }}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Quick add form */}
+              <div className="chat-input-bar" style={{ flexDirection: 'column', gap: 8, alignItems: 'stretch', padding: '10px 16px' }}>
+                <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: 'var(--navy-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Add expense</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 100px', gap: 6 }}>
+                  <select
+                    className="profile-input"
+                    style={{ fontSize: 12, padding: '5px 8px', height: 32 }}
+                    value={qCat}
+                    onChange={(e) => setQCat(e.target.value)}
+                  >
+                    {allCats.map((c) => <option key={c} value={c}>{labelCat(c)}</option>)}
+                  </select>
+                  <input
+                    className="profile-input"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Amount"
+                    value={qAmount}
+                    onChange={(e) => setQAmount(e.target.value)}
+                    style={{ fontSize: 12, padding: '5px 8px', height: 32 }}
+                  />
+                  <input
+                    className="profile-input"
+                    type="date"
+                    value={qDate}
+                    onChange={(e) => setQDate(e.target.value)}
+                    style={{ fontSize: 12, padding: '5px 8px', height: 32 }}
+                  />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6 }}>
+                  <input
+                    className="profile-input"
+                    placeholder="Note (optional)"
+                    value={qNote}
+                    onChange={(e) => setQNote(e.target.value)}
+                    style={{ fontSize: 12, padding: '5px 8px', height: 32 }}
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Enter') {
+                        const parsed = Number(qAmount);
+                        if (!qDate || !parsed || parsed <= 0) return;
+                        setQSaving(true);
+                        try { await addBudgetEntry({ category: qCat, amount: parsed, date: qDate, note: qNote }); setQAmount(''); setQNote(''); } finally { setQSaving(false); }
+                      }
+                    }}
+                  />
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={qSaving || !qAmount || Number(qAmount) <= 0 || !qDate}
+                    onClick={async () => {
+                      const parsed = Number(qAmount);
+                      if (!qDate || !parsed || parsed <= 0) return;
+                      setQSaving(true);
+                      try { await addBudgetEntry({ category: qCat, amount: parsed, date: qDate, note: qNote }); setQAmount(''); setQNote(''); } finally { setQSaving(false); }
+                    }}
+                  >
+                    <Plus size={13} /> {qSaving ? 'Saving...' : 'Add'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          );
+        })()}
+
+        {notesOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="chat-panel print-hide"
+            style={{ right: 'auto', left: 24, display: 'flex', flexDirection: 'column' }}
+          >
+            <div className="chat-header">
+              <div className="chat-header-title">
+                <FileText size={15} style={{ color: 'var(--primary-500)' }} />
+                Trip Notes
+              </div>
+              <button onClick={() => setNotesOpen(false)} className="icon-btn" aria-label="Close notes">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div style={{ flex: 1, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto' }}>
+              <textarea
+                autoFocus
+                value={notes}
+                onChange={(e) => {
+                  hasUserEditedNotes.current = true;
+                  setSaveNotesError('');
+                  setNotes(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const ta = e.currentTarget;
+                    const start = ta.selectionStart;
+                    const end = ta.selectionEnd;
+                    const before = notes.slice(0, start);
+                    const after = notes.slice(end);
+                    const lineStart = before.lastIndexOf('\n') + 1;
+                    const line = before.slice(lineStart);
+                    const bulletMatch = /^[•\-*]\s*/.exec(line);
+                    const prefix = bulletMatch ? bulletMatch[0] : '• ';
+                    e.preventDefault();
+                    const newNotes = before + '\n' + prefix + after;
+                    setNotes(newNotes);
+                    hasUserEditedNotes.current = true;
+                    setSaveNotesError('');
+                    requestAnimationFrame(() => {
+                      const newPos = start + 1 + prefix.length;
+                      ta.setSelectionRange(newPos, newPos);
+                    });
+                  }
+                }}
+                placeholder="• Write trip notes..."
+                style={{
+                  flex: 1,
+                  width: '100%',
+                  minHeight: 280,
+                  resize: 'none',
+                  border: 'none',
+                  outline: 'none',
+                  background: 'transparent',
+                  fontSize: 13,
+                  lineHeight: 1.7,
+                  color: 'var(--navy-800)',
+                  fontFamily: 'inherit',
+                }}
+              />
+            </div>
+
+            <div className="chat-input-bar" style={{ justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11, color: 'var(--navy-400)' }}>
+                {saveNotesError
+                  ? <span style={{ color: 'var(--error)' }}>{saveNotesError}</span>
+                  : savingNotes ? 'Saving...' : 'Auto-saved'
+                }
+              </span>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={savingNotes}
+                onClick={async () => {
+                  setSavingNotes(true);
+                  setSaveNotesError('');
+                  try {
+                    await saveTripNotes(notes);
+                  } catch {
+                    setSaveNotesError('Could not save.');
+                  } finally {
+                    setSavingNotes(false);
+                  }
+                }}
+              >
+                {savingNotes ? 'Saving...' : 'Save now'}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

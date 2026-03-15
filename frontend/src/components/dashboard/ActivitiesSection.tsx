@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Compass, Plus, Bookmark, MapPin, ExternalLink } from 'lucide-react';
+import { Compass, Plus, Bookmark, MapPin, ExternalLink, Ticket } from 'lucide-react';
 import DayPicker from '@components/dashboard/DayPicker';
 import { useTripStore } from '@/store/tripStore';
-import { buildActivityImage, buildFallbackImage, buildMapsSearchUrl } from '@/utils/mediaImages';
+import { buildActivityImage, buildFallbackImage, buildMapsSearchUrl, buildTicketsSearchUrl } from '@/utils/mediaImages';
 
 const CATEGORY_FILTERS = ['all', 'attractions', 'food', 'nightlife', 'outdoors', 'shopping', 'custom'];
 
@@ -41,8 +41,23 @@ export default function ActivitiesSection() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('all');
   const [addError, setAddError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [savingActivityId, setSavingActivityId] = useState<string | null>(null);
   const [imageErrorByActivityId, setImageErrorByActivityId] = useState<Record<string, boolean>>({});
   if (!currentTrip) return null;
+
+  const handleSave = async (activityId: string, currentStatus: string) => {
+    setSaveError('');
+    setSavingActivityId(activityId);
+    const newStatus = currentStatus === 'saved' ? 'suggested' : 'saved';
+    try {
+      await updateSuggestedActivityStatus(activityId, newStatus);
+    } catch (err: any) {
+      setSaveError(err?.response?.data?.message || 'Could not save activity.');
+    } finally {
+      setSavingActivityId(null);
+    }
+  };
 
   const destination = currentTrip.formData.destinations[0] || 'destination';
 
@@ -150,6 +165,15 @@ export default function ActivitiesSection() {
               buildMapsSearchUrl(
                 activity.placeQuery || activity.locationName || activity.title || `${destination} activity`,
               );
+            const isAttraction = (activity.category || '').toLowerCase() === 'attractions';
+            const ticketsUrl =
+              activity.externalUrl ||
+              (isAttraction
+                ? buildTicketsSearchUrl(
+                    activity.placeQuery || activity.locationName || activity.title || '',
+                    destination,
+                  )
+                : null);
             const displayTitle = cleanActivityTitle(activity.title || '', destination) || activity.title;
             const displayDescription = cleanActivityDescription(
               activity.description || '',
@@ -283,6 +307,18 @@ export default function ActivitiesSection() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'stretch', justifyContent: 'center', minWidth: 120 }}>
+                  {ticketsUrl && (
+                    <a
+                      href={ticketsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-ghost btn-sm"
+                      title="Find tickets"
+                      style={{ justifyContent: 'center' }}
+                    >
+                      <Ticket size={14} /> Tickets
+                    </a>
+                  )}
                   <a
                     href={mapsUrl}
                     target="_blank"
@@ -297,12 +333,14 @@ export default function ActivitiesSection() {
                     <Plus size={14} /> Add
                   </button>
                   <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => updateSuggestedActivityStatus(activity.id, 'saved')}
-                    title="Save for later"
+                    className={`btn btn-ghost btn-sm ${activity.status === 'saved' ? 'icon-btn-star-active' : ''}`}
+                    onClick={() => handleSave(activity.id, activity.status || '')}
+                    disabled={savingActivityId === activity.id}
+                    title={activity.status === 'saved' ? 'Saved' : 'Save for later'}
                     style={{ justifyContent: 'center' }}
                   >
-                    <Bookmark size={14} /> Save
+                    <Bookmark size={14} fill={activity.status === 'saved' ? 'currentColor' : 'none'} />
+                    {savingActivityId === activity.id && activity.status !== 'saved' ? 'Saving...' : activity.status === 'saved' ? 'Saved' : 'Save'}
                   </button>
                 </div>
               </div>
@@ -331,8 +369,8 @@ export default function ActivitiesSection() {
         </div>
       )}
 
-      {addError && (
-        <p style={{ marginTop: 10, marginBottom: 0, fontSize: 12, color: 'var(--error)' }}>{addError}</p>
+      {(addError || saveError) && (
+        <p style={{ marginTop: 10, marginBottom: 0, fontSize: 12, color: 'var(--error)' }}>{addError || saveError}</p>
       )}
 
       <DayPicker
@@ -340,6 +378,7 @@ export default function ActivitiesSection() {
         onClose={() => setActiveActivityId(null)}
         days={currentTrip.plan.map((d) => ({ day: d.day, title: d.title }))}
         onSelectDay={addToDay}
+        activityTitle={currentTrip.activities.find((a) => a.id === activeActivityId)?.title}
       />
     </div>
   );

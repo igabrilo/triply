@@ -365,7 +365,17 @@ def stream_trip_generation(trip_id):
                 'data': budget_payload,
             })
 
-            # Phase 7: Overview content + destination image
+            # Phase 7: Destination tips
+            yield _sse('status', {'phase': 'generating_tips'})
+            tips_data = ai_service.generate_tips(form_data)
+            tips_payload = [tip.model_dump() for tip in tips_data.tips]
+            TripService.persist_generated_section(trip, 'tips', tips_payload)
+            yield _sse('section_ready', {
+                'section': 'tips',
+                'data': tips_payload,
+            })
+
+            # Phase 8: Overview content + destination image
             yield _sse('status', {'phase': 'generating_overview'})
             overview_data = ai_service.generate_overview(form_data)
             overview_payload = overview_data.model_dump()

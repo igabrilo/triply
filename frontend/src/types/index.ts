@@ -31,6 +31,7 @@ export interface Trip {
   plan: PlanDay[];
   activities: SuggestedActivity[];
   weather: TripWeatherDay[];
+  tips: TripTip[];
   budget: BudgetHint | null;
   overview: OverviewData | null;
   selectedFlightId?: string | null;
@@ -141,6 +142,7 @@ export interface SuggestedActivity {
   costHint: string;
   placeQuery: string;
   mapsUrl?: string;
+  externalUrl?: string;
   imageQuery?: string;
   cachedImageUrl?: string;
   locationName?: string;
@@ -186,6 +188,14 @@ export interface WeatherData {
   condition?: string;
   icon?: string;
   humidityPct?: number | null;
+}
+
+export interface TripTip {
+  category: string;
+  title: string;
+  description: string;
+  linkUrl?: string;
+  linkLabel?: string;
 }
 
 export interface BudgetCategoryHint {
@@ -275,4 +285,4 @@ export interface User {
 }
 
 /* ─── UI State ─── */
-export type TabId = 'overview' | 'plan' | 'activities' | 'flights' | 'stays' | 'budget' | 'weather' | 'map' | 'profile';
+export type TabId = 'overview' | 'plan' | 'activities' | 'flights' | 'stays' | 'budget' | 'weather' | 'tips' | 'map' | 'profile';

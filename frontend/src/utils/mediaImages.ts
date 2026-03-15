@@ -21,6 +21,11 @@ export function buildMapsSearchUrl(query: string): string {
   return `https://www.google.com/maps/search/?api=1&query=${safe}`;
 }
 
+export function buildTicketsSearchUrl(query: string, destination?: string): string {
+  const combined = [query, destination].filter(Boolean).join(' ');
+  return `https://www.google.com/search?q=${encodeURIComponent(`${combined.trim()} tickets`)}`;
+}
+
 export function buildPlacePhotoProxyUrl(query: string, width = 640, height?: number, destination?: string): string {
   const safeQuery = encodeURIComponent((query || '').trim());
   const clampedWidth = Math.max(120, Math.min(Math.round(width || 640), 1600));
