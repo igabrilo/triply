@@ -1,13 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { MapPin, Calendar, Users, Sparkles, Navigation, Loader } from 'lucide-react';
+import { Users, Sparkles, Navigation, Loader } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
 import { useAuthStore } from '@/store/authStore';
 import { geocodeAPI } from '@/services/api';
 import Input from '@components/ui/Input';
 import Button from '@components/ui/Button';
 import Chip from '@components/ui/Chip';
+import DateRangePicker from '@components/ui/DateRangePicker';
+import DestinationAutocomplete from '@components/ui/DestinationAutocomplete';
 import type { BudgetLevel } from '@/types';
 
 const interestOptions = [
@@ -183,13 +185,18 @@ export default function TripForm() {
         {/* Destination */}
         <div>
           <label className="form-label">Where to?</label>
-          <Input
-            placeholder="e.g., Barcelona"
+          <DestinationAutocomplete
             value={destinationInput}
-            onChange={(e) => setDestinationInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDestination(); } }}
+            onChange={setDestinationInput}
+            onSelect={(city) => {
+              if (city && !formData.destinations.includes(city)) {
+                updateFormData({ destinations: [...formData.destinations, city] });
+                setErrors((e) => ({ ...e, destination: '' }));
+              }
+              setDestinationInput('');
+            }}
+            onEnter={addDestination}
             error={errors.destination}
-            icon={<MapPin size={16} />}
           />
           {formData.destinations.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
@@ -245,21 +252,13 @@ export default function TripForm() {
         {/* Dates */}
         <div>
           <label className="form-label">Dates</label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Input
-              type="date"
-              value={formData.startDate}
-              onChange={(e) => updateFormData({ startDate: e.target.value })}
-              icon={<Calendar size={16} />}
-            />
-            <Input
-              type="date"
-              value={formData.endDate}
-              onChange={(e) => updateFormData({ endDate: e.target.value })}
-              icon={<Calendar size={16} />}
-            />
-          </div>
-          {errors.dates && <p className="form-error">{errors.dates}</p>}
+          <DateRangePicker
+            startDate={formData.startDate}
+            endDate={formData.endDate}
+            onStartDateChange={(date) => updateFormData({ startDate: date })}
+            onEndDateChange={(date) => updateFormData({ endDate: date })}
+            error={errors.dates}
+          />
         </div>
 
         {/* Travelers */}

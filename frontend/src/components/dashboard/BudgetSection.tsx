@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { PiggyBank, Plus, Trash2, Pencil, X } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
+import DateRangePicker from '@components/ui/DateRangePicker';
 
 function money(amount: number | null, currency: string): string {
   if (amount == null) return '-';
@@ -111,11 +112,12 @@ export default function BudgetSection() {
             onChange={(e) => setAmount(e.target.value)}
             placeholder="Amount"
           />
-          <input
-            className="profile-input"
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
+          <DateRangePicker
+            mode="single"
+            allowPast
+            startDate={date}
+            onStartDateChange={setDate}
+            placeholder="Expense date"
           />
           <input
             className="profile-input"
@@ -263,11 +265,12 @@ export default function BudgetSection() {
                         onChange={(e) => setEditAmount(e.target.value)}
                         placeholder="Amount"
                       />
-                      <input
-                        className="profile-input"
-                        type="date"
-                        value={editDate}
-                        onChange={(e) => setEditDate(e.target.value)}
+                      <DateRangePicker
+                        mode="single"
+                        allowPast
+                        startDate={editDate}
+                        onStartDateChange={setEditDate}
+                        placeholder="Expense date"
                       />
                       <input
                         className="profile-input"

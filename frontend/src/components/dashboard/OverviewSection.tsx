@@ -4,6 +4,7 @@ import { ArrowRight, CloudSun, FileText, PiggyBank, Plane, Bed, X, Plus, Trash2,
 import { useTripStore } from '@/store/tripStore';
 import { buildFallbackImage, buildAirlineLogoUrl, buildPlaceImage, buildWeatherImage, buildStayPhotoProxyUrl } from '@/utils/mediaImages';
 import SidebarMap from '@components/dashboard/SidebarMap';
+import DateRangePicker from '@components/ui/DateRangePicker';
 
 function fmtDate(dateStr?: string): string {
   if (!dateStr) return '-';
@@ -884,10 +885,10 @@ export default function OverviewSection() {
               {/* Quick add form */}
               <div className="chat-input-bar" style={{ flexDirection: 'column', gap: 8, alignItems: 'stretch', padding: '10px 16px' }}>
                 <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: 'var(--navy-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Add expense</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 100px', gap: 6 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 1.2fr', gap: 6 }}>
                   <select
                     className="profile-input"
-                    style={{ fontSize: 12, padding: '5px 8px', height: 32 }}
+                    style={{ fontSize: 13, padding: '10px 10px', height: 42 }}
                     value={qCat}
                     onChange={(e) => setQCat(e.target.value)}
                   >
@@ -901,14 +902,17 @@ export default function OverviewSection() {
                     placeholder="Amount"
                     value={qAmount}
                     onChange={(e) => setQAmount(e.target.value)}
-                    style={{ fontSize: 12, padding: '5px 8px', height: 32 }}
+                    style={{ fontSize: 13, padding: '10px 10px', height: 42 }}
                   />
-                  <input
-                    className="profile-input"
-                    type="date"
-                    value={qDate}
-                    onChange={(e) => setQDate(e.target.value)}
-                    style={{ fontSize: 12, padding: '5px 8px', height: 32 }}
+                  <DateRangePicker
+                    mode="single"
+                    allowPast
+                    size="sm"
+                    dropdownDirection="up"
+                    dropdownAlign="right"
+                    startDate={qDate}
+                    onStartDateChange={setQDate}
+                    placeholder="Expense date"
                   />
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6 }}>
@@ -917,7 +921,7 @@ export default function OverviewSection() {
                     placeholder="Note (optional)"
                     value={qNote}
                     onChange={(e) => setQNote(e.target.value)}
-                    style={{ fontSize: 12, padding: '5px 8px', height: 32 }}
+                    style={{ fontSize: 13, padding: '10px 10px', height: 42 }}
                     onKeyDown={async (e) => {
                       if (e.key === 'Enter') {
                         const parsed = Number(qAmount);
