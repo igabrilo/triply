@@ -1,4 +1,4 @@
-import { motion, useScroll, useTransform } from 'framer-motion';
+import { motion, useScroll, useTransform, useSpring } from 'framer-motion';
 import { useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useBackgroundImages } from '@/hooks/useBackgroundImages';
@@ -10,12 +10,15 @@ export default function HeroSection() {
 
   const { scrollYProgress } = useScroll({
     target: ref,
-    offset: ["start start", "end start"]
+    offset: ['start start', 'end start'],
   });
 
-  const contentOpacity = useTransform(scrollYProgress, [0, 0.6], [1, 0]);
-  const scale = useTransform(scrollYProgress, [0, 0.6], [1, 0.92]);
-  const y = useTransform(scrollYProgress, [0, 0.6], [0, -80]);
+  // Content fades out — start later so first scroll feels gentle
+  const contentOpacity = useTransform(scrollYProgress, [0.05, 0.6], [1, 0]);
+
+  // Scale: spring-wrapped so it eases instead of mechanically tracking scroll
+  const rawScale = useTransform(scrollYProgress, [0, 1], [1, 0.88]);
+  const scale    = useSpring(rawScale, { stiffness: 100, damping: 22, mass: 0.5 });
 
   const handleScrollDown = () => {
     const formSection = document.getElementById('trip-form-section');
@@ -37,16 +40,19 @@ export default function HeroSection() {
         alignItems: 'center',
         justifyContent: 'center',
         textAlign: 'center',
-        position: 'relative',
+        position: 'sticky',
+        top: 0,
+        /* Sit behind the form sheet which comes up on top */
+        zIndex: 0,
         overflow: 'hidden',
-        opacity: contentOpacity,
         scale,
-        y,
       }}
     >
       <CrossfadeBackground bgImages={bgImages} currentImg={currentImg} prevImg={prevImg} />
 
-      <div style={{ maxWidth: 680, padding: '0 24px', position: 'relative', zIndex: 2 }}>
+      <motion.div
+        style={{ opacity: contentOpacity, maxWidth: 680, padding: '0 24px', position: 'relative', zIndex: 2 }}
+      >
         <motion.h1
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
@@ -98,7 +104,7 @@ export default function HeroSection() {
             Edit any section in chat
           </div>
         </motion.div>
-      </div>
+      </motion.div>
 
       {/* Scroll indicator */}
       <motion.button
@@ -119,10 +125,13 @@ export default function HeroSection() {
           zIndex: 2,
         }}
       >
-        <span style={{ fontSize: 13, color: 'var(--navy-400)', letterSpacing: '0.05em' }}>
-          Scroll to explore
-        </span>
+        <motion.div style={{ opacity: contentOpacity }}>
+          <span style={{ fontSize: 13, color: 'var(--navy-400)', letterSpacing: '0.05em' }}>
+            Scroll to explore
+          </span>
+        </motion.div>
         <motion.div
+          style={{ opacity: contentOpacity }}
           animate={{ y: [0, 8, 0] }}
           transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
         >

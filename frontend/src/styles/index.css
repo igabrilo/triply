@@ -1765,6 +1765,20 @@ select {
 /* ============================================================
    ANIMATIONS (for framer-motion + CSS fallbacks)
    ============================================================ */
+
+/* Ken Burns — slow zoom + gentle drift used on hero/form background images */
+@keyframes ken-burns-a {
+  from { transform: scale(1.0) translate(0%, 0%); }
+  to   { transform: scale(1.1) translate(-2%, -1%); }
+}
+@keyframes ken-burns-b {
+  from { transform: scale(1.08) translate(1%, 0.5%); }
+  to   { transform: scale(1.0) translate(-0.5%, -1.5%); }
+}
+@keyframes ken-burns-c {
+  from { transform: scale(1.0) translate(-1%, 0.5%); }
+  to   { transform: scale(1.09) translate(1.5%, -0.5%); }
+}
 @keyframes fade-in {
   from {
     opacity: 0;
