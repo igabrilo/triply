@@ -63,9 +63,43 @@ PW = 210      # A4 page width mm
 CW = PW - ML - MR  # 180 mm content width
 
 
+_UNICODE_REPLACEMENTS = str.maketrans({
+    '\u2018': "'",    # left single quotation mark
+    '\u2019': "'",    # right single quotation mark
+    '\u201c': '"',    # left double quotation mark
+    '\u201d': '"',    # right double quotation mark
+    '\u2013': '-',    # en dash
+    '\u2014': '-',    # em dash
+    '\u2026': '...',  # horizontal ellipsis
+    '\u20ac': 'EUR',  # euro sign (not in latin-1)
+    '\u00b0': ' deg', # degree sign (handled separately via \xb0 in weather)
+    '\u00e9': 'e',
+    '\u00e8': 'e',
+    '\u00ea': 'e',
+    '\u00eb': 'e',
+    '\u00e0': 'a',
+    '\u00e1': 'a',
+    '\u00e2': 'a',
+    '\u00e4': 'a',
+    '\u00f6': 'o',
+    '\u00fc': 'u',
+    '\u00df': 'ss',
+    '\u00f1': 'n',
+    '\u00e7': 'c',
+    '\u00ed': 'i',
+    '\u00f3': 'o',
+    '\u00fa': 'u',
+    '\u2022': '-',    # bullet
+    '\u00a0': ' ',    # non-breaking space
+    '\u00ab': '"',    # left-pointing angle quotation
+    '\u00bb': '"',    # right-pointing angle quotation
+})
+
+
 def _safe(value: Any) -> str:
     text = '' if value is None else str(value)
     text = text.replace('\r\n', '\n').replace('\r', '\n')
+    text = text.translate(_UNICODE_REPLACEMENTS)
     return text.encode('latin-1', 'replace').decode('latin-1')
 
 
@@ -311,7 +345,12 @@ class TripPDF(FPDF):
         orig = _safe(det.get('origin', '') or '')
         dest = _safe(det.get('destination', '') or '')
         route = f'{orig} -> {dest}' if orig else ''
-        price = _safe(det.get('priceHint', det.get('priceRange', '')) or '')
+        # Prefer the real ORM price columns; fall back to the details JSON hint
+        if f.price_amount is not None:
+            cur = _safe(f.price_currency or 'EUR')
+            price = f'{cur} {float(f.price_amount):.0f}'
+        else:
+            price = _safe(det.get('priceHint', det.get('priceRange', '')) or '')
         dur = _safe(det.get('duration', '') or '')
         stops = f.stops_count
         stops_t = ''
@@ -358,7 +397,12 @@ class TripPDF(FPDF):
         det = s.details or {}
         name = _safe(s.name or 'Accommodation')
         hood = _safe(s.neighborhood or '')
-        price = _safe(det.get('priceRange', '') or '')
+        # Prefer ORM price columns; fall back to details JSON
+        if s.price_amount is not None:
+            cur = _safe(s.price_currency or 'EUR')
+            price = f'{cur} {float(s.price_amount):.0f}/night'
+        else:
+            price = _safe(det.get('priceRange', det.get('priceHint', '')) or '')
         rating = float(s.rating) if s.rating else None
         why = _safe(s.why_it_fits or '')
 
