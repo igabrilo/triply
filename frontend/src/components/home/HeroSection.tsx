@@ -85,7 +85,7 @@ export default function HeroSection() {
             marginRight: 'auto',
           }}
         >
-          Triply builds flights, stays, and a day-by-day plan with links.
+          Triply builds your perfect trip, including flights, stays, and daily plans.
           Then you tweak anything in chat.
         </motion.p>
 
@@ -103,6 +103,7 @@ export default function HeroSection() {
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--primary-500)', flexShrink: 0 }} />
             Edit any section in chat
           </div>
+          
         </motion.div>
       </motion.div>
 

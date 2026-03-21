@@ -23,6 +23,9 @@ services:
     environment:
       - VITE_API_URL=/api
       - VITE_PROXY_TARGET=http://backend:5000
+      - CHOKIDAR_USEPOLLING=1
+      - WATCHPACK_POLLING=1
+      - CHOKIDAR_INTERVAL=200
     volumes:
       - ./frontend:/app
       - /app/node_modules

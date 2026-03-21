@@ -213,11 +213,24 @@ export default function FlightsSection() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, color: 'var(--navy-600)', fontSize: 13 }}>
-                <span>{flight.departureTime || '-'}</span>
-                <PlaneTakeoff size={13} />
-                <span>{flight.arrivalTime || '-'}</span>
-                <span>{flight.departure}{' -> '}{flight.arrival}</span>
+              <div className="flight-schedule">
+                <div className="flight-side">
+                  <div className="flight-time">{flight.departureTime || '-'}</div>
+                  <div className="flight-location">{flight.departure || '-'}</div>
+                </div>
+
+                <div className="flight-center">
+                  <div className="flight-line" />
+                  <div className="flight-plane">
+                    <PlaneTakeoff size={14} />
+                  </div>
+                  <div className="flight-duration">{(flight.duration || '-').replace(/^\s*[-–—]\s*/, '')}</div>
+                </div>
+
+                <div className="flight-side">
+                  <div className="flight-time">{flight.arrivalTime || '-'}</div>
+                  <div className="flight-location">{flight.arrival || '-'}</div>
+                </div>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
