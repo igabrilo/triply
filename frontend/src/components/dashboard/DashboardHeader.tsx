@@ -34,12 +34,12 @@ export default function DashboardHeader() {
     setExporting(true);
 
     try {
-      const blob = await tripAPI.exportOverviewPdf(currentTrip.id);
+      const blob = await tripAPI.exportTripPdf(currentTrip.id);
       const safeDest = (dest || 'trip').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'trip';
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${safeDest}-overview.pdf`;
+      link.download = `${safeDest}-trip-plan.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -95,7 +95,7 @@ export default function DashboardHeader() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button className="btn btn-ghost btn-sm" onClick={onExport} disabled={exporting}>
-            <Download size={15} /> {exporting ? 'Exporting...' : 'Export'}
+            <Download size={15} /> {exporting ? 'Exporting...' : 'Export PDF'}
           </button>
           <div style={{ position: 'relative' }}>
             <button

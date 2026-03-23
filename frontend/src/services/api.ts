@@ -129,7 +129,7 @@ export const tripAPI = {
     return data;
   },
 
-  async exportOverviewPdf(tripId: string): Promise<Blob> {
+  async exportTripPdf(tripId: string): Promise<Blob> {
     const { data } = await apiClient.get(`/trips/${tripId}/overview/pdf`, { responseType: 'blob' });
     return data as Blob;
   },

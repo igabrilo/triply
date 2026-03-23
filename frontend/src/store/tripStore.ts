@@ -206,7 +206,7 @@ function transformFlights(backendFlights: any[], selectedFlightId?: string | nul
       arrivalTime: details.arriveTimeHint || (f.arriveTime ? new Date(f.arriveTime).toLocaleTimeString() : ''),
       duration: details.durationHint || (f.durationMinutes ? `${f.durationMinutes} min` : ''),
       stops: f.stopsCount ?? f.stops_count ?? 0,
-      priceRange: details.priceHint || (f.price ? `â‚¬${f.price}` : ''),
+      priceRange: details.priceHint || (f.price != null ? `${f.price_currency || f.priceCurrency || 'EUR'} ${Number(f.price).toFixed(0)}` : ''),
       bookingUrl: f.deepLinkUrl || f.deep_link_url || details.bookingSearchUrl || '#',
       saved: f.saved || false,
       isSelected: (f.id || `flight_${idx}`) === selectedFlightId,
@@ -214,18 +214,37 @@ function transformFlights(backendFlights: any[], selectedFlightId?: string | nul
   });
 }
 
+const PRICE_TIER_MAP: Record<string, string> = {
+  '\u20ac': 'Budget',
+  '\u20ac\u20ac': 'Mid-range',
+  '\u20ac\u20ac\u20ac': 'Upscale',
+  '\u20ac\u20ac\u20ac\u20ac': 'Luxury',
+  '$': 'Budget',
+  '$$': 'Mid-range',
+  '$$$': 'Upscale',
+  '$$$$': 'Luxury',
+};
+
+function normalizePriceTier(value: string): string {
+  const trimmed = value.trim();
+  // Exact tier match
+  if (PRICE_TIER_MAP[trimmed]) return PRICE_TIER_MAP[trimmed];
+  // Range like €€-€€€ or $$-$$$
+  const rangeMatch = trimmed.match(/^([\u20ac$]+)\s*[-\u2013\u2014]\s*([\u20ac$]+)$/);
+  if (rangeMatch) {
+    const low = PRICE_TIER_MAP[rangeMatch[1]];
+    const high = PRICE_TIER_MAP[rangeMatch[2]];
+    if (low && high) return `${low} \u2013 ${high}`;
+    if (low) return low;
+    if (high) return high;
+  }
+  // String contains € but isn't pure tier notation (e.g. "€120–€180/night") — strip the € symbol
+  return trimmed.replace(/\u20ac/g, 'EUR ').replace(/\s{2,}/g, ' ').trim();
+}
+
 function transformStays(backendStays: any[], selectedStayId?: string | null): Stay[] {
   return backendStays.map((s: any, idx: number) => {
     const details = s.details || {};
-    const priceFromPayload =
-      details.priceRange ||
-      details.price_range ||
-      details.priceHint ||
-      details.price_hint ||
-      s.priceRange ||
-      s.price_range ||
-      s.price_hint ||
-      '';
     const numericPrice =
       s.price ??
       s.price_amount ??
@@ -238,10 +257,20 @@ function transformStays(backendStays: any[], selectedStayId?: string | null): St
       details.priceCurrency ||
       details.price_currency ||
       'EUR';
-    const priceRange = priceFromPayload
-      ? String(priceFromPayload)
-      : numericPrice != null
-        ? `${currency} ${Number(numericPrice).toFixed(0)}/night`
+    const priceFromPayload =
+      details.priceRange ||
+      details.price_range ||
+      details.priceHint ||
+      details.price_hint ||
+      s.priceRange ||
+      s.price_range ||
+      s.price_hint ||
+      '';
+    // Prefer real numeric price from DB columns; only fall back to text hint if no number available
+    const priceRange = numericPrice != null
+      ? `${currency} ${Number(numericPrice).toFixed(0)}/night`
+      : priceFromPayload
+        ? normalizePriceTier(String(priceFromPayload))
         : 'Price on request';
     return {
       id: s.id || `stay_${idx}`,

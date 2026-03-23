@@ -8,7 +8,7 @@ from flask import Response, g, jsonify, request, stream_with_context
 from app.routes import api_bp
 from app.utils.auth import require_auth
 from app.services.trip_service import TripService
-from app.services.pdf_service import build_overview_pdf
+from app.services.pdf_service import build_trip_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -843,14 +843,14 @@ def export_trip_overview_pdf(trip_id):
         return jsonify({'success': False, 'message': 'Trip not found'}), 404
 
     try:
-        pdf_bytes = build_overview_pdf(trip)
+        pdf_bytes = build_trip_pdf(trip)
     except Exception as exc:
-        logger.exception("Overview PDF export failed for trip %s", trip_id)
+        logger.exception("PDF export failed for trip %s", trip_id)
         return jsonify({'success': False, 'message': str(exc)}), 500
 
     destination = trip.destination or trip.title or 'trip'
     safe_destination = re.sub(r'[^A-Za-z0-9_-]+', '-', str(destination)).strip('-').lower() or 'trip'
-    filename = f'{safe_destination}-overview.pdf'
+    filename = f'{safe_destination}-trip-plan.pdf'
     return Response(
         pdf_bytes,
         mimetype='application/pdf',
