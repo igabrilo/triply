@@ -18,7 +18,7 @@ function kbStyle(index: number): React.CSSProperties {
     backgroundImage: 'inherit',
     backgroundSize: 'cover',
     backgroundPosition: 'center',
-    animation: `${name} 14s ease-in-out infinite alternate`,
+    animation: `${name} 60s ease-in-out both`,
     willChange: 'transform',
   };
 }
@@ -42,11 +42,15 @@ export default function CrossfadeBackground({
             inset: 0,
             overflow: 'hidden',
             zIndex: 0,
-            backgroundImage: `url(${bgImages[prevImg]})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
           }}
-        />
+        >
+          <div
+            style={{
+              ...kbStyle(prevImg),
+              backgroundImage: `url(${bgImages[prevImg]})`,
+            }}
+          />
+        </motion.div>
       )}
 
       {/* Current image — zoom-in on fade-in, then Ken Burns continues */}

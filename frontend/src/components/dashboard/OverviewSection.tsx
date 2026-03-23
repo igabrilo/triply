@@ -18,13 +18,6 @@ function money(amount: number | null | undefined, currency: string): string {
   return `${currency} ${amount.toFixed(2)}`;
 }
 
-function toIsoDate(input?: string): string {
-  if (!input) return '';
-  const date = new Date(input);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toISOString().slice(0, 10);
-}
-
 function nightsBetween(startDate?: string, endDate?: string): number {
   if (!startDate || !endDate) return 0;
   const start = new Date(startDate);
@@ -45,28 +38,33 @@ function buildDefaultTravelDescription(params: {
 }): string {
   const destination = (params.destination || 'trip').trim();
   const nights = nightsBetween(params.startDate, params.endDate);
-  const nightsLabel = nights > 0 ? `${nights}-night` : 'Multi-night';
+  const nightsLabel = nights > 0 ? `${nights} night${nights === 1 ? '' : 's'}` : 'multiple nights';
   const budgetLabelMap: Record<string, string> = {
     budget: 'budget-friendly',
     mid: 'mid-range',
     premium: 'premium',
     luxury: 'luxury',
   };
-  const budgetLabel = budgetLabelMap[params.budget] || params.budget || 'balanced-budget';
-  const startIso = toIsoDate(params.startDate);
-  const endIso = toIsoDate(params.endDate);
+  const paceLabelMap: Record<'relaxed' | 'balanced' | 'packed', string> = {
+    relaxed: 'relaxed',
+    balanced: 'balanced',
+    packed: 'packed',
+  };
+  const budgetLabel = budgetLabelMap[params.budget] || params.budget || 'balanced';
+  const paceLabel = paceLabelMap[params.pace] || 'balanced';
+  const startPretty = fmtDate(params.startDate);
+  const endPretty = fmtDate(params.endDate);
   const fromLabel = (params.origin || '').trim() || 'your origin';
   const travelers = Math.max(1, Number(params.travelers) || 1);
+  const travelersLabel = `${travelers} traveler${travelers > 1 ? 's' : ''}`;
 
-  let description = `${nightsLabel} ${budgetLabel}, ${params.pace}-pace ${destination} trip for ${travelers} from ${fromLabel}`;
-  if (startIso && endIso) {
-    description += ` (${startIso} to ${endIso}).`;
-  } else {
-    description += '.';
+  let description = `A ${nightsLabel} ${destination} trip for ${travelersLabel} from ${fromLabel}, planned in a ${paceLabel} style with a ${budgetLabel} budget.`;
+  if (startPretty === '-' || endPretty === '-') {
+    description += ' Travel dates can be adjusted anytime.';
   }
 
   if (destination.toLowerCase().includes('tokyo')) {
-    description += ' Mix of classic neighborhoods (Asakusa, Shibuya, Shinjuku), low-cost food spots (depachika, ramen, conveyor sushi), one day trip option (Kamakura or Nikko), and smart transit planning with an IC card to keep costs down.';
+    description += ' Focus areas include iconic neighborhoods, efficient transit planning, and flexible day-trip options to keep the itinerary practical and easy to follow.';
   }
 
   return description;
@@ -87,6 +85,37 @@ function normalizeAdviceLine(value: string): string {
     .trim();
   if (!cleaned) return '';
   return /[.!?]$/.test(cleaned) ? cleaned : `${cleaned}.`;
+}
+
+function formatBudgetTier(value: string): string {
+  const map: Record<string, string> = {
+    budget: 'Budget-friendly',
+    mid: 'Mid-range',
+    premium: 'Premium',
+    luxury: 'Luxury',
+  };
+  return map[(value || '').toLowerCase()] || (value || 'Flexible');
+}
+
+function formatPace(value: 'relaxed' | 'balanced' | 'packed'): string {
+  const map: Record<'relaxed' | 'balanced' | 'packed', string> = {
+    relaxed: 'Relaxed',
+    balanced: 'Balanced',
+    packed: 'Packed',
+  };
+  return map[value] || 'Balanced';
+}
+
+function splitTravelDescription(value: string): string[] {
+  const clean = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return [];
+
+  const sentenceChunks = (clean.match(/[^.!?]+[.!?]?/g) || [])
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (sentenceChunks.length <= 2) return sentenceChunks;
+  return [sentenceChunks[0], sentenceChunks.slice(1).join(' ')];
 }
 
 function isLegacyAutoOverviewImage(url: string): boolean {
@@ -263,6 +292,7 @@ export default function OverviewSection() {
   const destination = normalizeDestinationName(currentTrip.formData.destinations[0] || 'Trip');
   const dateRange = `${fmtDate(currentTrip.formData.startDate)} -> ${fmtDate(currentTrip.formData.endDate)}`;
   const travelersLabel = `${currentTrip.formData.travelers} traveler${currentTrip.formData.travelers > 1 ? 's' : ''}`;
+  const tripNights = nightsBetween(currentTrip.formData.startDate, currentTrip.formData.endDate);
   const generatedTravelDescription = buildDefaultTravelDescription({
     destination,
     startDate: currentTrip.formData.startDate,
@@ -379,6 +409,19 @@ export default function OverviewSection() {
   };
 
   const travelDescriptionSummary = (overview?.travelDescription || '').trim() || generatedTravelDescription;
+  const travelDescriptionLines = splitTravelDescription(travelDescriptionSummary);
+  const travelDescriptionIntro = travelDescriptionLines[0] || travelDescriptionSummary;
+  const budgetTierLabel = formatBudgetTier(currentTrip.formData.budget);
+  const paceLabel = formatPace(currentTrip.formData.preferences.pace);
+  const whatToExpect = [
+    `A ${paceLabel.toLowerCase()} pace with clear day-by-day flow.`,
+    primaryFlight
+      ? `Flight baseline set: ${primaryFlight.departure} -> ${primaryFlight.arrival}.`
+      : 'Flight options can be refined anytime in the Flights tab.',
+    primaryStay
+      ? `Stay anchor selected in ${primaryStay.neighborhood || destination}.`
+      : 'Stay recommendations are ready for quick comparison.',
+  ];
 
   const primaryFlightPriceDisplay = primaryFlight
     ? (() => {
@@ -409,7 +452,7 @@ export default function OverviewSection() {
         <div>
           <h2 className="section-title">Overview</h2>
           <p style={{ fontSize: 13, color: 'var(--navy-500)', marginTop: 4 }}>
-            One-page summary for planning and PDF export.
+            Your trip summary ready for export. Perfect for sharing with travel companions or printing as a handy reference on the go.
           </p>
         </div>
       </div>
@@ -461,23 +504,63 @@ export default function OverviewSection() {
               {dateRange} - {travelersLabel}
             </p>
             <p style={{ margin: 0, fontSize: 13, color: 'var(--navy-500)' }}>
-              Origin: {currentTrip.formData.origin || '-'} - Budget tier: {currentTrip.formData.budget}
+              Origin: {currentTrip.formData.origin || '-'}
             </p>
+
+            <div className="overview-facts-grid" style={{ marginTop: 4 }}>
+              <div className="overview-fact-pill">
+                <span className="overview-fact-label">Trip length</span>
+                <span className="overview-fact-value">{tripNights > 0 ? `${tripNights} night${tripNights === 1 ? '' : 's'}` : 'Flexible'}</span>
+              </div>
+              <div className="overview-fact-pill">
+                <span className="overview-fact-label">Travel pace</span>
+                <span className="overview-fact-value">{paceLabel}</span>
+              </div>
+              <div className="overview-fact-pill">
+                <span className="overview-fact-label">Budget tier</span>
+                <span className="overview-fact-value">{budgetTierLabel}</span>
+              </div>
+              <div className="overview-fact-pill">
+                <span className="overview-fact-label">Travelers</span>
+                <span className="overview-fact-value">{travelersLabel}</span>
+              </div>
+            </div>
           </div>
           <div
-            style={{
-              display: 'grid',
-              gap: 8,
-              alignContent: 'start',
-              borderLeft: '1px solid var(--navy-100)',
-              paddingLeft: 12,
-            }}
+            className="overview-summary-panel"
           >
-            <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: 'var(--navy-900)', letterSpacing: '0.02em' }}>
-              Travel Description
-            </p>
-            <p style={{ margin: 0, fontSize: 13, color: 'var(--navy-700)', whiteSpace: 'pre-wrap' }}>
-              {travelDescriptionSummary}
+            <div className="overview-summary-head">
+              <p className="overview-summary-title" style={{ margin: 0, fontSize: 12, fontWeight: 800, color: 'var(--navy-900)', letterSpacing: '0.02em' }}>
+                Before you go
+              </p>
+              <span className="overview-summary-tag">Quick brief</span>
+            </div>
+
+            <div className="overview-brief-grid">
+              <section className="overview-brief-block">
+                <p className="overview-brief-label">Trip brief</p>
+                <p className="overview-summary-text" style={{ margin: 0, fontSize: 13, color: 'var(--navy-700)' }}>
+                  {travelDescriptionIntro}
+                </p>
+                {travelDescriptionLines.length > 1 && (
+                  <p className="overview-summary-text" style={{ margin: 0, fontSize: 12, color: 'var(--navy-500)' }}>
+                    {travelDescriptionLines.slice(1).join(' ')}
+                  </p>
+                )}
+              </section>
+
+              <section className="overview-brief-block">
+                <p className="overview-brief-label">What to expect</p>
+                <ul className="overview-brief-list">
+                  {whatToExpect.map((item, idx) => (
+                    <li key={`${idx}-${item}`}>{item}</li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+
+            <p className="overview-summary-tip">
+              Tip: Open Flights, Stays, or Tips to fine-tune details in under a minute.
             </p>
           </div>
         </div>
@@ -643,7 +726,7 @@ export default function OverviewSection() {
             <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--navy-500)' }}>
               {firstWeather
                 ? `${firstWeather.icon ? `${firstWeather.icon} ` : ''}${firstWeather.condition || 'Forecast'} - ${firstWeather.highTempC ?? '-'} C/${firstWeather.lowTempC ?? '-'} C`
-                : 'Forecast is informational and read-only. Users can refresh data, not edit conditions.'}
+                : 'Check the weather forecast up to 7 days in advance and pack accordingly.'}
             </p>
           </div>
           <ArrowRight size={14} style={{ color: 'var(--navy-400)' }} />
@@ -748,17 +831,40 @@ export default function OverviewSection() {
         </div>
 
         {expertAdvice.length > 0 && (
-          <div className="item-card overview-print-block">
-            <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: 'var(--navy-900)', letterSpacing: '0.02em' }}>
-              Personalized Expert Advice
-            </p>
-            {expertAdvice.length > 0 && (
-              <ol style={{ margin: '10px 0 0', paddingLeft: 20, color: 'var(--navy-600)', fontSize: 13, display: 'grid', gap: 4 }}>
-                {expertAdvice.map((tip, idx) => (
-                  <li key={`${idx}-${tip}`}>{tip}</li>
-                ))}
-              </ol>
-            )}
+          <div className="item-card overview-print-block overview-expert-card">
+            <div className="overview-expert-header">
+              <div className="overview-expert-title-wrap">
+                <div className="overview-expert-icon">
+                  <Lightbulb size={16} style={{ color: 'var(--warning-700)' }} />
+                </div>
+                <div>
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: 'var(--navy-950)', letterSpacing: '0.01em' }}>
+                    Personalized Expert Advice
+                  </p>
+                  <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--navy-500)' }}>
+                    Practical tips tuned for your route, budget, pace, and weather.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm print-hide"
+                onClick={openTipsTab}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}
+              >
+                Open tips <ArrowRight size={12} />
+              </button>
+            </div>
+
+            <div className="overview-expert-grid">
+              {expertAdvice.map((tip, idx) => (
+                <article key={`${idx}-${tip}`} className="overview-expert-tip">
+                  <span className="overview-expert-tip-index">{idx + 1}</span>
+                  <p className="overview-expert-tip-text">{tip}</p>
+                </article>
+              ))}
+            </div>
           </div>
         )}
 
