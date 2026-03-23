@@ -176,6 +176,7 @@ export default function Dashboard() {
   const { currentTrip, activeTab, isGenerating } = useTripStore();
 
   useEffect(() => { if (!currentTrip) navigate('/'); }, [currentTrip, navigate]);
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'smooth' }); }, [activeTab]);
   if (!currentTrip) return null;
 
   const isStillGenerating = isGenerating || currentTrip.status === 'generating';

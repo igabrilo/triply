@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 
@@ -96,11 +97,22 @@ _UNICODE_REPLACEMENTS = str.maketrans({
 })
 
 
+_EURO_TIER = {1: 'Budget', 2: 'Mid-range', 3: 'Upscale', 4: 'Luxury'}
+
+
 def _safe(value: Any) -> str:
     text = '' if value is None else str(value)
     text = text.replace('\r\n', '\n').replace('\r', '\n')
     text = text.translate(_UNICODE_REPLACEMENTS)
     return text.encode('latin-1', 'replace').decode('latin-1')
+
+
+def _normalize_price(text: str) -> str:
+    """Convert hotel tier notation (€, €€, €€€) to readable labels before _safe()."""
+    stripped = text.strip()
+    if re.fullmatch(r'\u20ac+', stripped):
+        return _EURO_TIER.get(len(stripped), stripped)
+    return text
 
 
 def _extract(trip) -> dict[str, Any]:
@@ -402,7 +414,8 @@ class TripPDF(FPDF):
             cur = _safe(s.price_currency or 'EUR')
             price = f'{cur} {float(s.price_amount):.0f}/night'
         else:
-            price = _safe(det.get('priceRange', det.get('priceHint', '')) or '')
+            raw_price = det.get('priceRange', det.get('priceHint', '')) or ''
+            price = _safe(_normalize_price(str(raw_price)))
         rating = float(s.rating) if s.rating else None
         why = _safe(s.why_it_fits or '')
 
