@@ -312,13 +312,13 @@ export default function PlanSection() {
                             )}
                           </div>
 
-                          {/* Tickets + Maps */}
+                          {/* Tickets / Reserve + Maps */}
                           {(ticketLink || mapLink) && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 16, paddingTop: 10, borderTop: '1px solid var(--navy-50)' }}>
                               {ticketLink && (
                                 <a href={ticketLink.url} target="_blank" rel="noopener noreferrer"
                                   style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: 'var(--primary-600)', textDecoration: 'none' }}>
-                                  <Ticket size={13} /> Tickets
+                                  <Ticket size={13} /> {ticketLink.label}
                                 </a>
                               )}
                               {mapLink && (

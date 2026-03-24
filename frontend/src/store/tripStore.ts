@@ -174,14 +174,22 @@ function transformDays(backendDays: any[]): PlanDay[] {
         description: item.description || '',
         timeOfDay: item.timeBlock || item.time_block || '',
         duration: item.durationMinutes ? `${item.durationMinutes} min` : '',
-        links: [
-          ...(item.mapsUrl || item.maps_url
-            ? [{ label: 'Map', url: item.mapsUrl || item.maps_url, type: 'map' as const }]
-            : []),
-          ...(item.externalUrl || item.external_url
-            ? [{ label: 'Link', url: item.externalUrl || item.external_url, type: 'other' as const }]
-            : []),
-        ],
+        links: (() => {
+          const links: import('@/types').ActivityLink[] = [];
+          const mapsUrl = item.mapsUrl || item.maps_url;
+          if (mapsUrl) links.push({ label: 'Map', url: mapsUrl, type: 'map' });
+          const extUrl = item.externalUrl || item.external_url;
+          if (extUrl) {
+            const cat = (item.category || '').toLowerCase();
+            const isDining = cat === 'dining';
+            links.push({
+              label: isDining ? 'Reserve' : 'Tickets',
+              url: extUrl,
+              type: isDining ? 'other' : 'tickets',
+            });
+          }
+          return links;
+        })(),
         status: item.status || 'planned',
         tags: [item.category || item.timeBlock || item.time_block].filter(Boolean) as string[],
         category: item.category || null,
@@ -227,10 +235,10 @@ const PRICE_TIER_MAP: Record<string, string> = {
 
 function normalizePriceTier(value: string): string {
   const trimmed = value.trim();
-  // Exact tier match
+  // Exact tier match (€, $$, etc.)
   if (PRICE_TIER_MAP[trimmed]) return PRICE_TIER_MAP[trimmed];
-  // Range like €€-€€€ or $$-$$$
-  const rangeMatch = trimmed.match(/^([\u20ac$]+)\s*[-\u2013\u2014]\s*([\u20ac$]+)$/);
+  // Range like €€-€€€ or $$-$$$ optionally followed by extra text e.g. "(mid to upper-mid)"
+  const rangeMatch = trimmed.match(/^([\u20ac$]+)\s*[-\u2013\u2014]\s*([\u20ac$]+)/);
   if (rangeMatch) {
     const low = PRICE_TIER_MAP[rangeMatch[1]];
     const high = PRICE_TIER_MAP[rangeMatch[2]];
@@ -238,8 +246,14 @@ function normalizePriceTier(value: string): string {
     if (low) return low;
     if (high) return high;
   }
-  // String contains € but isn't pure tier notation (e.g. "€120–€180/night") — strip the € symbol
-  return trimmed.replace(/\u20ac/g, 'EUR ').replace(/\s{2,}/g, ' ').trim();
+  // Tier symbol with trailing description e.g. "€€ (mid-range)" — extract just the tier part
+  const leadingTierMatch = trimmed.match(/^([\u20ac$]+)\s/);
+  if (leadingTierMatch && PRICE_TIER_MAP[leadingTierMatch[1]]) {
+    return PRICE_TIER_MAP[leadingTierMatch[1]];
+  }
+  // Numeric price like "€120–€180/night" — already human-readable, pass through
+  if (/[\u20ac$£¥₹]/.test(trimmed) && /\d/.test(trimmed)) return trimmed;
+  return trimmed;
 }
 
 function transformStays(backendStays: any[], selectedStayId?: string | null): Stay[] {

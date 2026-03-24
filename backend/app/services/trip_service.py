@@ -20,6 +20,31 @@ from sqlalchemy.orm.attributes import flag_modified
 logger = logging.getLogger(__name__)
 
 
+def _build_booking_search_url(
+    name: str | None,
+    neighborhood: str | None,
+    destination: str | None,
+    checkin: date | None,
+    checkout: date | None,
+    adults: int | None,
+) -> str:
+    """Build a Booking.com search-results URL with dates pre-filled.
+
+    Using a search URL (instead of a direct property page) means users always
+    land on a page showing *available* properties for their exact dates, even
+    if the AI-suggested property has no vacancy.
+    """
+    parts = [p for p in [name, neighborhood, destination] if p and p.strip()]
+    search_query = ', '.join(parts) if parts else (destination or 'hotel')
+    params = [f"ss={quote_plus(search_query)}", "no_rooms=1"]
+    if checkin:
+        params.append(f"checkin={checkin.isoformat()}")
+    if checkout:
+        params.append(f"checkout={checkout.isoformat()}")
+    params.append(f"group_adults={max(1, int(adults or 1))}")
+    return "https://www.booking.com/searchresults.html?" + "&".join(params)
+
+
 _DESTINATION_COORD_FALLBACKS: dict[str, tuple[float, float]] = {
     'tokyo': (35.6764, 139.6500),
     'paris': (48.8566, 2.3522),
@@ -397,7 +422,10 @@ class TripService:
                 'lat': s.get('lat'),
                 'lng': s.get('lng'),
                 'whyItFits': s.get('why_it_fits'),
-                'deepLinkUrl': s.get('booking_search_url'),
+                'deepLinkUrl': _build_booking_search_url(
+                    s.get('name'), s.get('neighborhood'), trip.destination,
+                    trip.start_date, trip.end_date, trip.travelers_count,
+                ),
                 'cachedImageUrl': s.get('cached_image_url'),
                 'details': {
                     'stayType': s.get('stay_type'),
@@ -1006,7 +1034,10 @@ class TripService:
                 'lat': s.get('lat'),
                 'lng': s.get('lng'),
                 'whyItFits': s.get('why_it_fits'),
-                'deepLinkUrl': s.get('booking_search_url'),
+                'deepLinkUrl': _build_booking_search_url(
+                    s.get('name'), s.get('neighborhood'), trip.destination,
+                    trip.start_date, trip.end_date, trip.travelers_count,
+                ),
                 'details': {
                     'stayType': s.get('stay_type'),
                     'priceRange': s.get('price_range'),

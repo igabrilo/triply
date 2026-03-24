@@ -55,7 +55,7 @@ def _build_trip_system_prompt() -> str:
         "- Return ONLY valid JSON matching the requested schema.\n"
         "- For each plan item, include a `place_query` suitable for a Maps geocoding API "
         "(e.g. 'Sacré-Cœur Basilica, Paris, France').\n"
-        "- For stays, provide realistic `booking_search_url` as a Booking.com or Google Hotels search URL.\n"
+        "- For stays, you may omit `booking_search_url` — it will be constructed server-side with actual trip dates.\n"
         "- For flights, provide `booking_search_url` as a Google Flights search URL.\n"
         "- All prices should use the user's preferred currency when provided, defaulting to EUR.\n"
         "- Be creative but realistic. Suggest real places, restaurants, and attractions.\n"

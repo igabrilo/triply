@@ -317,9 +317,9 @@ export default function OverviewSection() {
 
   const budgetSummary = currentTrip.budget?.summary;
   const budgetCurrency = budgetSummary?.currency || currentTrip.budget?.currency || 'EUR';
-  const destinationHeroImage = `/api/media/overview-hero?destination=${encodeURIComponent(destination)}&w=1600&h=900`;
-  const destinationPlaceImage = `/api/media/place-photo?q=${encodeURIComponent(`${destination} famous landmark`)}&w=1600&h=900&norand=1`;
-  const fallbackPlaceImage = `/api/media/place-photo?q=${encodeURIComponent(destination)}&w=1600&h=900&norand=1`;
+  const destinationHeroImage = `/api/media/overview-hero?destination=${encodeURIComponent(destination)}&w=3200&h=1800`;
+  const destinationPlaceImage = `/api/media/place-photo?q=${encodeURIComponent(`${destination} famous landmark`)}&w=3200&h=1800&norand=1`;
+  const fallbackPlaceImage = `/api/media/place-photo?q=${encodeURIComponent(destination)}&w=3200&h=1800&norand=1`;
   const fallbackStaticImage = buildFallbackImage(`overview-${destination}`, 1600, 900);
   const storedCoverUrl = (overview?.destinationImageUrl || '').trim();
   const cachedHeroUrl = (overview?.cachedImageUrl || '').trim();

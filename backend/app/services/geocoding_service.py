@@ -196,7 +196,7 @@ def _fetch_wikimedia_place_photo(query: str, max_width: int = 640, destination: 
 
     try:
         headers = {'User-Agent': 'Triply/1.0 (travel-planner)'}
-        thumb_size = max(180, min(int(max_width or 640), 1200))
+        thumb_size = max(180, min(int(max_width or 640), 2560))
         for candidate in candidates:
             search_resp = requests.get(
                 'https://en.wikipedia.org/w/api.php',
@@ -260,7 +260,7 @@ def _fetch_wikimedia_commons_photo(query: str, max_width: int = 640, destination
     base_short = cleaned.split(',')[0].strip() or cleaned
     short_query = f"{base_short} {dest}" if dest and dest.lower() not in base_short.lower() else base_short
     headers = {'User-Agent': 'Triply/1.0 (travel-planner)'}
-    thumb_size = max(180, min(int(max_width or 640), 1200))
+    thumb_size = max(180, min(int(max_width or 640), 2560))
 
     try:
         search_resp = requests.get(
@@ -551,8 +551,24 @@ def reverse_geocode_city(lat: float, lng: float) -> Optional[str]:
     return None
 
 
+_TICKET_CATEGORIES = {'activity', 'landmark', 'shopping', 'nightlife'}
+_DINING_CATEGORIES = {'dining'}
+_SKIP_LINK_CATEGORIES = {'transport'}
+
+
+def _build_attraction_link(query: str, category: str | None) -> tuple[str, str] | None:
+    """Return (url, label) for a tickets / reservation search, or None for transport."""
+    cat = (category or '').lower().strip()
+    if cat in _SKIP_LINK_CATEGORIES:
+        return None
+    safe = quote_plus(query.strip())
+    if cat in _DINING_CATEGORIES:
+        return (f"https://www.google.com/search?q={safe}+reservation", 'Reserve')
+    return (f"https://www.google.com/search?q={safe}+tickets", 'Tickets')
+
+
 def enrich_plan_items(days_data: list[dict]) -> list[dict]:
-    """Enrich plan items with geocoded lat/lng and maps_url.
+    """Enrich plan items with geocoded lat/lng, maps_url, and attraction links.
 
     Accepts the raw list of day dicts (with items) from the AI output
     and returns the same structure with location fields populated.
@@ -571,6 +587,13 @@ def enrich_plan_items(days_data: list[dict]) -> list[dict]:
             if geo['location_name']:
                 item['location_name'] = geo['location_name']
             item['maps_url'] = geo['maps_url']
+
+            # Generate a tickets / reservation search link when the AI didn't supply one
+            if not item.get('external_url'):
+                link = _build_attraction_link(query, item.get('category'))
+                if link:
+                    item['external_url'] = link[0]
+                    item['external_url_label'] = link[1]
     return days_data
 
 
@@ -820,8 +843,8 @@ def fetch_place_photo(
     api_key = current_app.config.get('GOOGLE_MAPS_API_KEY', '')
     query_candidates = _query_variants(query or '', destination=destination_hint)
 
-    width = max(120, min(int(max_width or 640), 1600))
-    height = max(120, min(int(max_height), 1600)) if max_height else None
+    width = max(120, min(int(max_width or 640), 4800))
+    height = max(120, min(int(max_height), 4800)) if max_height else None
 
     if api_key:
         if photo_name:

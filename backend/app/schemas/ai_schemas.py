@@ -45,7 +45,14 @@ class StaySchema(BaseModel):
     name: str
     neighborhood: Optional[str] = None
     stay_type: Optional[str] = Field(None, description="hotel | hostel | apartment | boutique | resort")
-    price_range: Optional[str] = None
+    price_range: Optional[str] = Field(
+        None,
+        description=(
+            "Estimated per-night price range as specific numeric amounts in the user's preferred currency. "
+            "Format: '<currency symbol><low>–<currency symbol><high>/night', e.g. '€90–€140/night', "
+            "'$120–$180/night', '£80–£120/night'. Never use tier symbols like €€ or $$."
+        )
+    )
     rating_hint: Optional[float] = None
     why_it_fits: Optional[str] = None
     place_query: Optional[str] = Field(None, description="Search query for geocoding")

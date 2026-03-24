@@ -19,7 +19,7 @@ def _maps_search_url(query: str) -> str:
 
 def _overview_place_photo_url(destination: str) -> str:
     raw = (destination or '').strip() or 'travel destination'
-    return f"/api/media/overview-hero?destination={quote_plus(raw)}&w=1600&h=900"
+    return f"/api/media/overview-hero?destination={quote_plus(raw)}&w=3200&h=1800"
 
 
 def _activities_to_payload(activities_data):
