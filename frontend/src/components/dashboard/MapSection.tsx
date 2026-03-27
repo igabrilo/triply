@@ -7,7 +7,7 @@ import { geocodeAPI, tripAPI } from '@/services/api';
 import Chip from '@components/ui/Chip';
 import Modal from '@components/ui/Modal';
 import type { Activity, Stay } from '@/types';
-import { buildActivityImage, buildFallbackImage } from '@/utils/mediaImages';
+import { buildActivityImage, buildFallbackImage, buildPlacePhotoProxyUrl } from '@/utils/mediaImages';
 
 import 'leaflet/dist/leaflet.css';
 
@@ -40,80 +40,100 @@ function getCategoryMeta(category?: string | null): CategoryMeta {
   return CATEGORY_MAP[category.toLowerCase()] ?? DEFAULT_META;
 }
 
-/* ── Colored SVG marker factory ── */
+/* ── Photo marker factory ── */
 
-function createMarkerIcon(color: string, emoji: string, step?: string): L.DivIcon {
+function createPhotoMarkerIcon(color: string, emoji: string, step?: string, imageUrl?: string): L.DivIcon {
+  const size = 38;
   const badge = step
     ? `<div style="
-        position: absolute; top: -4px; right: -6px;
-        width: 16px; height: 16px;
-        background: white;
-        border: 1.5px solid ${color};
+        position: absolute; top: -4px; right: -4px;
+        width: 18px; height: 18px;
+        background: ${color};
+        border: 2px solid white;
         border-radius: 50%;
         display: flex; align-items: center; justify-content: center;
-        font-size: 9px; font-weight: 700; color: ${color};
-        line-height: 1;
+        font-size: 9px; font-weight: 700; color: white;
+        line-height: 1; z-index: 2;
       ">${step}</div>`
     : '';
+
+  const imgContent = imageUrl
+    ? `<img src="${imageUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+       <div class="triply-photo-marker-emoji" style="display:none;background:${color};font-size:14px;">${emoji}</div>`
+    : `<div class="triply-photo-marker-emoji" style="background:${color};font-size:14px;">${emoji}</div>`;
 
   return L.divIcon({
     className: 'triply-marker',
     html: `
-      <div style="
-        position: relative;
-        width: 32px; height: 32px;
-        background: ${color};
-        border: 2.5px solid white;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 14px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        cursor: pointer;
-      ">${emoji}${badge}</div>
+      <div style="position:relative;width:${size}px;height:${size}px;">
+        <div class="triply-photo-marker" style="
+          width:${size}px;height:${size}px;
+          border:3px solid ${color};
+        ">${imgContent}</div>
+        ${badge}
+      </div>
     `,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-    popupAnchor: [0, -18],
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2 + 4)],
   });
 }
 
-function createActiveMarkerIcon(color: string, emoji: string, step?: string): L.DivIcon {
+function createActivePhotoMarkerIcon(color: string, emoji: string, step?: string, imageUrl?: string): L.DivIcon {
+  const size = 48;
   const badge = step
     ? `<div style="
-        position: absolute; top: -4px; right: -6px;
-        width: 18px; height: 18px;
-        background: white;
-        border: 2px solid ${color};
+        position: absolute; top: -4px; right: -4px;
+        width: 20px; height: 20px;
+        background: ${color};
+        border: 2px solid white;
         border-radius: 50%;
         display: flex; align-items: center; justify-content: center;
-        font-size: 10px; font-weight: 700; color: ${color};
-        line-height: 1;
+        font-size: 10px; font-weight: 700; color: white;
+        line-height: 1; z-index: 2;
       ">${step}</div>`
     : '';
+
+  const imgContent = imageUrl
+    ? `<img src="${imageUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+       <div class="triply-photo-marker-emoji" style="display:none;background:${color};font-size:18px;">${emoji}</div>`
+    : `<div class="triply-photo-marker-emoji" style="background:${color};font-size:18px;">${emoji}</div>`;
 
   return L.divIcon({
     className: 'triply-marker triply-marker-active',
     html: `
-      <div style="
-        position: relative;
-        width: 40px; height: 40px;
-        background: ${color};
-        border: 3px solid white;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 16px;
-        box-shadow: 0 0 0 4px ${color}44, 0 4px 12px rgba(0,0,0,0.35);
-        cursor: pointer;
-        transition: all 0.2s ease;
-      ">${emoji}${badge}</div>
+      <div style="position:relative;width:${size}px;height:${size}px;">
+        <div class="triply-photo-marker" style="
+          width:${size}px;height:${size}px;
+          border:3.5px solid ${color};
+          box-shadow:0 0 0 3px ${color}33, 0 4px 14px rgba(0,0,0,0.3);
+        ">${imgContent}</div>
+        ${badge}
+      </div>
     `,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
-    popupAnchor: [0, -22],
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2 + 4)],
+  });
+}
+
+function createSimpleMarkerIcon(color: string, emoji: string): L.DivIcon {
+  return L.divIcon({
+    className: 'triply-marker',
+    html: `
+      <div style="
+        position:relative;width:32px;height:32px;
+      ">
+        <div class="triply-photo-marker" style="
+          width:32px;height:32px;border:3px solid ${color};
+        ">
+          <div class="triply-photo-marker-emoji" style="background:${color};font-size:14px;">${emoji}</div>
+        </div>
+      </div>
+    `,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -20],
   });
 }
 
@@ -552,9 +572,14 @@ export default function MapSection() {
                   const meta = getCategoryMeta(activity.category);
                   const isActive = hoveredId === activity.id || focusedId === activity.id;
                   const stepNum = String(stepNumbers.get(activity.id) ?? '');
+                  const markerImgUrl = buildPlacePhotoProxyUrl(
+                    [activity.locationName, activity.name].filter(Boolean).join(', ') || activity.name,
+                    120, 120, destination,
+                  );
                   const icon = isActive
-                    ? createActiveMarkerIcon(meta.color, meta.icon, stepNum)
-                    : createMarkerIcon(meta.color, meta.icon, stepNum);
+                    ? createActivePhotoMarkerIcon(meta.color, meta.icon, stepNum, markerImgUrl)
+                    : createPhotoMarkerIcon(meta.color, meta.icon, stepNum, markerImgUrl);
+                  const mapsLink = activity.links.find((l) => l.type === 'map');
 
                   return (
                     <Marker
@@ -570,59 +595,58 @@ export default function MapSection() {
                     >
                       <Popup>
                         <div className="map-popup">
-                          <img
-                            src={buildActivityImage(
-                              [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
-                              destination,
-                              activity.category || 'activity',
-                              480,
-                              260,
-                              `map-popup-${currentTrip.id}-${activity.id}`,
+                          <div className="map-popup-image">
+                            <img
+                              src={buildActivityImage(
+                                [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
+                                destination,
+                                activity.category || 'activity',
+                                560, 320,
+                                `map-popup-${currentTrip.id}-${activity.id}`,
+                              )}
+                              alt={activity.name}
+                              loading="lazy"
+                              onError={(e) => {
+                                const img = e.currentTarget;
+                                if (img.dataset.fallback === '1') return;
+                                img.dataset.fallback = '1';
+                                img.src = buildFallbackImage(`map-popup-${currentTrip.id}-${activity.id}`, 560, 320);
+                              }}
+                            />
+                            {activity.duration && (
+                              <div className="map-popup-image-badge" style={{ background: `${meta.color}dd` }}>
+                                {activity.duration}
+                              </div>
                             )}
-                            alt={activity.name}
-                            loading="lazy"
-                            style={{ width: '100%', height: 96, objectFit: 'cover', borderRadius: 8, marginBottom: 8, display: 'block' }}
-                            onError={(e) => {
-                              const img = e.currentTarget;
-                              if (img.dataset.fallback === '1') return;
-                              img.dataset.fallback = '1';
-                              img.src = buildFallbackImage(`map-popup-${currentTrip.id}-${activity.id}`, 480, 260);
-                            }}
-                          />
-                          <strong>{activity.name}</strong>
-                          {activity.locationName && (
-                            <p className="map-popup-location">{activity.locationName}</p>
-                          )}
-                          {activity.address && (
-                            <p className="map-popup-address">{activity.address}</p>
-                          )}
-                          <p className="map-popup-meta">
-                            Day {entry.day} · {activity.timeOfDay || 'Anytime'}
-                            {activity.duration ? ` · ${activity.duration}` : ''}
-                          </p>
-                          {activity.description && (
-                            <p className="map-popup-desc">
-                              {activity.description.length > 70
-                                ? `${activity.description.slice(0, 70).trim()}…`
-                                : activity.description}
+                          </div>
+                          <div className="map-popup-body">
+                            {(activity.locationName || activity.address) && (
+                              <p className="map-popup-location">
+                                <MapPin size={11} style={{ flexShrink: 0 }} />
+                                {activity.locationName || activity.address}
+                              </p>
+                            )}
+                            <strong>{activity.name}</strong>
+                            <p className="map-popup-meta">
+                              Day {entry.day} · {activity.timeOfDay || 'Anytime'}
                             </p>
-                          )}
-                          {activity.links.length > 0 && (
-                            <div className="map-popup-links">
-                              {activity.links.filter((l) => l.type === 'map').map((link, i) => (
-                                <a key={`map-${i}`} href={link.url} target="_blank" rel="noopener noreferrer" className="map-popup-link map-popup-link-map">
-                                  <MapIcon size={11} />
-                                  Google Maps
-                                </a>
-                              ))}
-                              {activity.links.filter((l) => l.type !== 'map').map((link, i) => (
-                                <a key={`other-${i}`} href={link.url} target="_blank" rel="noopener noreferrer" className="map-popup-link">
-                                  <ExternalLink size={11} />
-                                  {link.label === 'Link' ? 'Website' : link.label}
-                                </a>
-                              ))}
-                            </div>
-                          )}
+                            {mapsLink && (
+                              <a href={mapsLink.url} target="_blank" rel="noopener noreferrer" className="map-popup-cta map-popup-cta-maps">
+                                <MapIcon size={12} />
+                                View on Google Maps
+                              </a>
+                            )}
+                            {activity.links.filter((l) => l.type !== 'map').length > 0 && (
+                              <div className="map-popup-links">
+                                {activity.links.filter((l) => l.type !== 'map').map((link, i) => (
+                                  <a key={`other-${i}`} href={link.url} target="_blank" rel="noopener noreferrer" className="map-popup-link">
+                                    <ExternalLink size={11} />
+                                    {link.label === 'Link' ? 'Website' : link.label}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </Popup>
                     </Marker>
@@ -630,7 +654,7 @@ export default function MapSection() {
                 })}
 
                 {staticPoints.map((point) => {
-                  const style =
+                  const pointStyle =
                     point.type === 'airport-origin'
                       ? { color: '#0ea5e9', icon: '🛫' }
                       : point.type === 'airport-destination'
@@ -640,39 +664,44 @@ export default function MapSection() {
                     <Marker
                       key={point.id}
                       position={[point.lat, point.lng]}
-                      icon={createMarkerIcon(style.color, style.icon)}
+                      icon={createSimpleMarkerIcon(pointStyle.color, pointStyle.icon)}
                     >
                       <Popup>
                         <div className="map-popup">
-                          <img
-                            src={buildActivityImage(
-                              [point.label, point.subtitle].filter(Boolean).join(', ') || point.label,
-                              destination,
-                              point.type === 'stay' ? 'stay' : 'transport',
-                              420,
-                              240,
-                              `map-static-${currentTrip.id}-${point.id}`,
+                          <div className="map-popup-image">
+                            <img
+                              src={buildActivityImage(
+                                [point.label, point.subtitle].filter(Boolean).join(', ') || point.label,
+                                destination,
+                                point.type === 'stay' ? 'stay' : 'transport',
+                                560, 320,
+                                `map-static-${currentTrip.id}-${point.id}`,
+                              )}
+                              alt={point.label}
+                              loading="lazy"
+                              onError={(e) => {
+                                const img = e.currentTarget;
+                                if (img.dataset.fallback === '1') return;
+                                img.dataset.fallback = '1';
+                                img.src = buildFallbackImage(`map-static-${currentTrip.id}-${point.id}`, 560, 320);
+                              }}
+                            />
+                          </div>
+                          <div className="map-popup-body">
+                            {point.subtitle && (
+                              <p className="map-popup-location">
+                                <MapPin size={11} style={{ flexShrink: 0 }} />
+                                {point.subtitle}
+                              </p>
                             )}
-                            alt={point.label}
-                            loading="lazy"
-                            style={{ width: '100%', height: 88, objectFit: 'cover', borderRadius: 8, marginBottom: 8, display: 'block' }}
-                            onError={(e) => {
-                              const img = e.currentTarget;
-                              if (img.dataset.fallback === '1') return;
-                              img.dataset.fallback = '1';
-                              img.src = buildFallbackImage(`map-static-${currentTrip.id}-${point.id}`, 420, 240);
-                            }}
-                          />
-                          <strong>{point.label}</strong>
-                          {point.subtitle && <p className="map-popup-location">{point.subtitle}</p>}
-                          {point.mapsUrl && (
-                            <div className="map-popup-links">
-                              <a href={point.mapsUrl} target="_blank" rel="noopener noreferrer" className="map-popup-link map-popup-link-map">
-                                <MapIcon size={11} />
-                                Open in Maps
+                            <strong>{point.label}</strong>
+                            {point.mapsUrl && (
+                              <a href={point.mapsUrl} target="_blank" rel="noopener noreferrer" className="map-popup-cta map-popup-cta-maps">
+                                <MapIcon size={12} />
+                                View on Google Maps
                               </a>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
                       </Popup>
                     </Marker>
@@ -730,26 +759,18 @@ export default function MapSection() {
                   style={{ cursor: hasCoords ? 'pointer' : 'default' }}
                 >
                   <div
+                    className="map-list-item-image"
                     style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 10,
-                      overflow: 'hidden',
-                      border: `1px solid ${isActive ? `${meta.color}66` : 'var(--navy-100)'}`,
+                      border: `1.5px solid ${isActive ? `${meta.color}44` : 'var(--navy-100)'}`,
                       background: 'var(--navy-50)',
-                      flexShrink: 0,
                     }}
                   >
                     {activityImageErrorById[activity.id] ? (
                       <div
-                        className="map-day-badge"
+                        className="map-list-item-image-fallback"
                         style={{
-                          width: '100%',
-                          height: '100%',
-                          background: `${meta.color}18`,
+                          background: `${meta.color}12`,
                           color: meta.color,
-                          fontSize: 14,
-                          borderRadius: 0,
                         }}
                       >
                         {meta.icon}
@@ -766,7 +787,6 @@ export default function MapSection() {
                         )}
                         alt={activity.name}
                         loading="lazy"
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                         onError={(e) => {
                           const img = e.currentTarget;
                           if (img.dataset.fallback === '1') {
@@ -779,18 +799,10 @@ export default function MapSection() {
                       />
                     )}
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{
-                      fontSize: 14,
-                      fontWeight: 500,
-                      color: 'var(--navy-800)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}>
-                      {activity.name}
-                    </p>
-                    <p style={{ fontSize: 12, color: 'var(--navy-400)' }}>
+                  <div className="map-list-item-content">
+                    <p className="map-list-item-title">{activity.name}</p>
+                    <p className="map-list-item-subtitle">
+                      <span className="map-list-item-cat-dot" style={{ background: meta.color }} />
                       Day {entry.day} · {activity.timeOfDay || 'Anytime'}
                       {activity.locationName ? ` · ${activity.locationName}` : ''}
                     </p>
@@ -834,9 +846,14 @@ export default function MapSection() {
                   const meta = getCategoryMeta(activity.category);
                   const isActive = hoveredId === activity.id || focusedId === activity.id;
                   const stepNum = String(stepNumbers.get(activity.id) ?? '');
+                  const markerImgUrl = buildPlacePhotoProxyUrl(
+                    [activity.locationName, activity.name].filter(Boolean).join(', ') || activity.name,
+                    120, 120, destination,
+                  );
                   const icon = isActive
-                    ? createActiveMarkerIcon(meta.color, meta.icon, stepNum)
-                    : createMarkerIcon(meta.color, meta.icon, stepNum);
+                    ? createActivePhotoMarkerIcon(meta.color, meta.icon, stepNum, markerImgUrl)
+                    : createPhotoMarkerIcon(meta.color, meta.icon, stepNum, markerImgUrl);
+                  const mapsLink = activity.links.find((l) => l.type === 'map');
 
                   return (
                     <Marker
@@ -849,59 +866,58 @@ export default function MapSection() {
                     >
                       <Popup>
                         <div className="map-popup">
-                          <img
-                            src={buildActivityImage(
-                              [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
-                              destination,
-                              activity.category || 'activity',
-                              480,
-                              260,
-                              `map-popup-${currentTrip.id}-${activity.id}`,
+                          <div className="map-popup-image">
+                            <img
+                              src={buildActivityImage(
+                                [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
+                                destination,
+                                activity.category || 'activity',
+                                560, 320,
+                                `map-popup-${currentTrip.id}-${activity.id}`,
+                              )}
+                              alt={activity.name}
+                              loading="lazy"
+                              onError={(e) => {
+                                const img = e.currentTarget;
+                                if (img.dataset.fallback === '1') return;
+                                img.dataset.fallback = '1';
+                                img.src = buildFallbackImage(`map-popup-${currentTrip.id}-${activity.id}`, 560, 320);
+                              }}
+                            />
+                            {activity.duration && (
+                              <div className="map-popup-image-badge" style={{ background: `${meta.color}dd` }}>
+                                {activity.duration}
+                              </div>
                             )}
-                            alt={activity.name}
-                            loading="lazy"
-                            style={{ width: '100%', height: 96, objectFit: 'cover', borderRadius: 8, marginBottom: 8, display: 'block' }}
-                            onError={(e) => {
-                              const img = e.currentTarget;
-                              if (img.dataset.fallback === '1') return;
-                              img.dataset.fallback = '1';
-                              img.src = buildFallbackImage(`map-popup-${currentTrip.id}-${activity.id}`, 480, 260);
-                            }}
-                          />
-                          <strong>{activity.name}</strong>
-                          {activity.locationName && (
-                            <p className="map-popup-location">{activity.locationName}</p>
-                          )}
-                          {activity.address && (
-                            <p className="map-popup-address">{activity.address}</p>
-                          )}
-                          <p className="map-popup-meta">
-                            Day {entry.day} · {activity.timeOfDay || 'Anytime'}
-                            {activity.duration ? ` · ${activity.duration}` : ''}
-                          </p>
-                          {activity.description && (
-                            <p className="map-popup-desc">
-                              {activity.description.length > 70
-                                ? `${activity.description.slice(0, 70).trim()}…`
-                                : activity.description}
+                          </div>
+                          <div className="map-popup-body">
+                            {(activity.locationName || activity.address) && (
+                              <p className="map-popup-location">
+                                <MapPin size={11} style={{ flexShrink: 0 }} />
+                                {activity.locationName || activity.address}
+                              </p>
+                            )}
+                            <strong>{activity.name}</strong>
+                            <p className="map-popup-meta">
+                              Day {entry.day} · {activity.timeOfDay || 'Anytime'}
                             </p>
-                          )}
-                          {activity.links.length > 0 && (
-                            <div className="map-popup-links">
-                              {activity.links.filter((l) => l.type === 'map').map((link, i) => (
-                                <a key={`map-${i}`} href={link.url} target="_blank" rel="noopener noreferrer" className="map-popup-link map-popup-link-map">
-                                  <MapIcon size={11} />
-                                  Google Maps
-                                </a>
-                              ))}
-                              {activity.links.filter((l) => l.type !== 'map').map((link, i) => (
-                                <a key={`other-${i}`} href={link.url} target="_blank" rel="noopener noreferrer" className="map-popup-link">
-                                  <ExternalLink size={11} />
-                                  {link.label === 'Link' ? 'Website' : link.label}
-                                </a>
-                              ))}
-                            </div>
-                          )}
+                            {mapsLink && (
+                              <a href={mapsLink.url} target="_blank" rel="noopener noreferrer" className="map-popup-cta map-popup-cta-maps">
+                                <MapIcon size={12} />
+                                View on Google Maps
+                              </a>
+                            )}
+                            {activity.links.filter((l) => l.type !== 'map').length > 0 && (
+                              <div className="map-popup-links">
+                                {activity.links.filter((l) => l.type !== 'map').map((link, i) => (
+                                  <a key={`other-${i}`} href={link.url} target="_blank" rel="noopener noreferrer" className="map-popup-link">
+                                    <ExternalLink size={11} />
+                                    {link.label === 'Link' ? 'Website' : link.label}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </Popup>
                     </Marker>
@@ -909,7 +925,7 @@ export default function MapSection() {
                 })}
 
                 {staticPoints.map((point) => {
-                  const style =
+                  const pointStyle =
                     point.type === 'airport-origin'
                       ? { color: '#0ea5e9', icon: '🛫' }
                       : point.type === 'airport-destination'
@@ -919,39 +935,44 @@ export default function MapSection() {
                     <Marker
                       key={point.id}
                       position={[point.lat, point.lng]}
-                      icon={createMarkerIcon(style.color, style.icon)}
+                      icon={createSimpleMarkerIcon(pointStyle.color, pointStyle.icon)}
                     >
                       <Popup>
                         <div className="map-popup">
-                          <img
-                            src={buildActivityImage(
-                              [point.label, point.subtitle].filter(Boolean).join(', ') || point.label,
-                              destination,
-                              point.type === 'stay' ? 'stay' : 'transport',
-                              420,
-                              240,
-                              `map-static-${currentTrip.id}-${point.id}`,
+                          <div className="map-popup-image">
+                            <img
+                              src={buildActivityImage(
+                                [point.label, point.subtitle].filter(Boolean).join(', ') || point.label,
+                                destination,
+                                point.type === 'stay' ? 'stay' : 'transport',
+                                560, 320,
+                                `map-static-${currentTrip.id}-${point.id}`,
+                              )}
+                              alt={point.label}
+                              loading="lazy"
+                              onError={(e) => {
+                                const img = e.currentTarget;
+                                if (img.dataset.fallback === '1') return;
+                                img.dataset.fallback = '1';
+                                img.src = buildFallbackImage(`map-static-${currentTrip.id}-${point.id}`, 560, 320);
+                              }}
+                            />
+                          </div>
+                          <div className="map-popup-body">
+                            {point.subtitle && (
+                              <p className="map-popup-location">
+                                <MapPin size={11} style={{ flexShrink: 0 }} />
+                                {point.subtitle}
+                              </p>
                             )}
-                            alt={point.label}
-                            loading="lazy"
-                            style={{ width: '100%', height: 88, objectFit: 'cover', borderRadius: 8, marginBottom: 8, display: 'block' }}
-                            onError={(e) => {
-                              const img = e.currentTarget;
-                              if (img.dataset.fallback === '1') return;
-                              img.dataset.fallback = '1';
-                              img.src = buildFallbackImage(`map-static-${currentTrip.id}-${point.id}`, 420, 240);
-                            }}
-                          />
-                          <strong>{point.label}</strong>
-                          {point.subtitle && <p className="map-popup-location">{point.subtitle}</p>}
-                          {point.mapsUrl && (
-                            <div className="map-popup-links">
-                              <a href={point.mapsUrl} target="_blank" rel="noopener noreferrer" className="map-popup-link map-popup-link-map">
-                                <MapIcon size={11} />
-                                Open in Maps
+                            <strong>{point.label}</strong>
+                            {point.mapsUrl && (
+                              <a href={point.mapsUrl} target="_blank" rel="noopener noreferrer" className="map-popup-cta map-popup-cta-maps">
+                                <MapIcon size={12} />
+                                View on Google Maps
                               </a>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
                       </Popup>
                     </Marker>
@@ -963,6 +984,7 @@ export default function MapSection() {
 
           <div className="map-expanded-sidebar">
             {/* Filters */}
+            <p className="map-expanded-sidebar-header">Filter</p>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               <button
                 onClick={() => { setSelectedDay(null); setFocusedId(null); }}
@@ -993,6 +1015,10 @@ export default function MapSection() {
               ))}
             </div>
 
+            <p className="map-expanded-sidebar-header" style={{ marginTop: 4 }}>
+              {filteredEntries.length} {filteredEntries.length === 1 ? 'Activity' : 'Activities'}
+            </p>
+
             {/* Activity list */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, overflowY: 'auto' }}>
               {filteredEntries.map((entry) => {
@@ -1014,26 +1040,18 @@ export default function MapSection() {
                     style={{ cursor: hasCoords ? 'pointer' : 'default' }}
                   >
                     <div
+                      className="map-list-item-image"
                       style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 10,
-                        overflow: 'hidden',
-                        border: `1px solid ${isActive ? `${meta.color}66` : 'var(--navy-100)'}`,
+                        border: `1.5px solid ${isActive ? `${meta.color}44` : 'var(--navy-100)'}`,
                         background: 'var(--navy-50)',
-                        flexShrink: 0,
                       }}
                     >
                       {activityImageErrorById[activity.id] ? (
                         <div
-                          className="map-day-badge"
+                          className="map-list-item-image-fallback"
                           style={{
-                            width: '100%',
-                            height: '100%',
-                            background: `${meta.color}18`,
+                            background: `${meta.color}12`,
                             color: meta.color,
-                            fontSize: 14,
-                            borderRadius: 0,
                           }}
                         >
                           {meta.icon}
@@ -1050,7 +1068,6 @@ export default function MapSection() {
                           )}
                           alt={activity.name}
                           loading="lazy"
-                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                           onError={(e) => {
                             const img = e.currentTarget;
                             if (img.dataset.fallback === '1') {
@@ -1063,18 +1080,10 @@ export default function MapSection() {
                         />
                       )}
                     </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{
-                        fontSize: 14,
-                        fontWeight: 500,
-                        color: 'var(--navy-800)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}>
-                        {activity.name}
-                      </p>
-                      <p style={{ fontSize: 12, color: 'var(--navy-400)' }}>
+                    <div className="map-list-item-content">
+                      <p className="map-list-item-title">{activity.name}</p>
+                      <p className="map-list-item-subtitle">
+                        <span className="map-list-item-cat-dot" style={{ background: meta.color }} />
                         Day {entry.day} · {activity.timeOfDay || 'Anytime'}
                         {activity.locationName ? ` · ${activity.locationName}` : ''}
                       </p>

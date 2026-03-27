@@ -8,7 +8,7 @@ import { geocodeAPI, tripAPI } from '@/services/api';
 import Modal from '@components/ui/Modal';
 import Chip from '@components/ui/Chip';
 import type { Activity } from '@/types';
-import { buildActivityImage, buildFallbackImage } from '@/utils/mediaImages';
+import { buildActivityImage, buildFallbackImage, buildPlacePhotoProxyUrl } from '@/utils/mediaImages';
 
 import 'leaflet/dist/leaflet.css';
 
@@ -38,37 +38,40 @@ function getCategoryMeta(category?: string | null): CategoryMeta {
   return CATEGORY_MAP[category.toLowerCase()] ?? DEFAULT_META;
 }
 
-function createMarkerIcon(color: string, emoji: string, step?: string): L.DivIcon {
+function createPhotoMarkerIcon(color: string, emoji: string, step?: string, imageUrl?: string): L.DivIcon {
+  const size = 34;
   const badge = step
     ? `<div style="
-        position: absolute; top: -4px; right: -6px;
+        position: absolute; top: -4px; right: -4px;
         width: 16px; height: 16px;
-        background: white;
-        border: 1.5px solid ${color};
-        border-radius: 50%;
-        display: flex; align-items: center; justify-content: center;
-        font-size: 9px; font-weight: 700; color: ${color};
-        line-height: 1;
-      ">${step}</div>`
-    : '';
-
-  return L.divIcon({
-    className: 'triply-marker',
-    html: `
-      <div style="
-        position: relative;
-        width: 28px; height: 28px;
         background: ${color};
         border: 2px solid white;
         border-radius: 50%;
         display: flex; align-items: center; justify-content: center;
-        font-size: 12px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-      ">${emoji}${badge}</div>
+        font-size: 8px; font-weight: 700; color: white;
+        line-height: 1; z-index: 2;
+      ">${step}</div>`
+    : '';
+
+  const imgContent = imageUrl
+    ? `<img src="${imageUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+       <div class="triply-photo-marker-emoji" style="display:none;background:${color};font-size:12px;">${emoji}</div>`
+    : `<div class="triply-photo-marker-emoji" style="background:${color};font-size:12px;">${emoji}</div>`;
+
+  return L.divIcon({
+    className: 'triply-marker',
+    html: `
+      <div style="position:relative;width:${size}px;height:${size}px;">
+        <div class="triply-photo-marker" style="
+          width:${size}px;height:${size}px;
+          border:2.5px solid ${color};
+        ">${imgContent}</div>
+        ${badge}
+      </div>
     `,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-    popupAnchor: [0, -16],
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2 + 4)],
   });
 }
 
@@ -128,37 +131,41 @@ function matchesCategory(activity: Activity, filter: string): boolean {
   return matches.includes(cat);
 }
 
-function createActiveMarkerIcon(color: string, emoji: string, step?: string): L.DivIcon {
+function createActivePhotoMarkerIcon(color: string, emoji: string, step?: string, imageUrl?: string): L.DivIcon {
+  const size = 46;
   const badge = step
     ? `<div style="
-        position: absolute; top: -4px; right: -6px;
-        width: 18px; height: 18px;
-        background: white;
-        border: 2px solid ${color};
+        position: absolute; top: -4px; right: -4px;
+        width: 20px; height: 20px;
+        background: ${color};
+        border: 2px solid white;
         border-radius: 50%;
         display: flex; align-items: center; justify-content: center;
-        font-size: 10px; font-weight: 700; color: ${color};
-        line-height: 1;
+        font-size: 10px; font-weight: 700; color: white;
+        line-height: 1; z-index: 2;
       ">${step}</div>`
     : '';
+
+  const imgContent = imageUrl
+    ? `<img src="${imageUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+       <div class="triply-photo-marker-emoji" style="display:none;background:${color};font-size:16px;">${emoji}</div>`
+    : `<div class="triply-photo-marker-emoji" style="background:${color};font-size:16px;">${emoji}</div>`;
 
   return L.divIcon({
     className: 'triply-marker triply-marker-active',
     html: `
-      <div style="
-        position: relative;
-        width: 36px; height: 36px;
-        background: ${color};
-        border: 2.5px solid white;
-        border-radius: 50%;
-        display: flex; align-items: center; justify-content: center;
-        font-size: 14px;
-        box-shadow: 0 0 0 3px ${color}44, 0 3px 10px rgba(0,0,0,0.3);
-      ">${emoji}${badge}</div>
+      <div style="position:relative;width:${size}px;height:${size}px;">
+        <div class="triply-photo-marker" style="
+          width:${size}px;height:${size}px;
+          border:3px solid ${color};
+          box-shadow:0 0 0 3px ${color}33, 0 4px 14px rgba(0,0,0,0.3);
+        ">${imgContent}</div>
+        ${badge}
+      </div>
     `,
-    iconSize: [36, 36],
-    iconAnchor: [18, 18],
-    popupAnchor: [0, -20],
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2 + 4)],
   });
 }
 
@@ -435,11 +442,15 @@ export default function SidebarMap() {
             {mappableEntries.map((entry) => {
               const meta = getCategoryMeta(entry.activity.category);
               const stepNum = String(stepNumbers.get(entry.activity.id) ?? '');
+              const markerImgUrl = buildPlacePhotoProxyUrl(
+                [entry.activity.locationName, entry.activity.name].filter(Boolean).join(', ') || entry.activity.name,
+                120, 120, destination,
+              );
               return (
                 <Marker
                   key={entry.activity.id}
                   position={[entry.activity.lat!, entry.activity.lng!]}
-                  icon={createMarkerIcon(meta.color, meta.icon, stepNum)}
+                  icon={createPhotoMarkerIcon(meta.color, meta.icon, stepNum, markerImgUrl)}
                   interactive={false}
                 />
               );
@@ -480,9 +491,14 @@ export default function SidebarMap() {
                   const meta = getCategoryMeta(activity.category);
                   const isActive = hoveredId === activity.id || focusedId === activity.id;
                   const stepNum = String(stepNumbers.get(activity.id) ?? '');
+                  const markerImgUrl = buildPlacePhotoProxyUrl(
+                    [activity.locationName, activity.name].filter(Boolean).join(', ') || activity.name,
+                    120, 120, destination,
+                  );
                   const icon = isActive
-                    ? createActiveMarkerIcon(meta.color, meta.icon, stepNum)
-                    : createMarkerIcon(meta.color, meta.icon, stepNum);
+                    ? createActivePhotoMarkerIcon(meta.color, meta.icon, stepNum, markerImgUrl)
+                    : createPhotoMarkerIcon(meta.color, meta.icon, stepNum, markerImgUrl);
+                  const mapsLink = activity.links.find((l) => l.type === 'map');
 
                   return (
                     <Marker
@@ -495,59 +511,58 @@ export default function SidebarMap() {
                     >
                       <Popup>
                         <div className="map-popup">
-                          <img
-                            src={buildActivityImage(
-                              [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
-                              destination,
-                              activity.category || 'activity',
-                              480,
-                              260,
-                              `sidebar-map-popup-${currentTrip.id}-${activity.id}`,
+                          <div className="map-popup-image">
+                            <img
+                              src={buildActivityImage(
+                                [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
+                                destination,
+                                activity.category || 'activity',
+                                560, 320,
+                                `sidebar-map-popup-${currentTrip.id}-${activity.id}`,
+                              )}
+                              alt={activity.name}
+                              loading="lazy"
+                              onError={(e) => {
+                                const img = e.currentTarget;
+                                if (img.dataset.fallback === '1') return;
+                                img.dataset.fallback = '1';
+                                img.src = buildFallbackImage(`sidebar-map-popup-${currentTrip.id}-${activity.id}`, 560, 320);
+                              }}
+                            />
+                            {activity.duration && (
+                              <div className="map-popup-image-badge" style={{ background: `${meta.color}dd` }}>
+                                {activity.duration}
+                              </div>
                             )}
-                            alt={activity.name}
-                            loading="lazy"
-                            style={{ width: '100%', height: 96, objectFit: 'cover', borderRadius: 8, marginBottom: 8, display: 'block' }}
-                            onError={(e) => {
-                              const img = e.currentTarget;
-                              if (img.dataset.fallback === '1') return;
-                              img.dataset.fallback = '1';
-                              img.src = buildFallbackImage(`sidebar-map-popup-${currentTrip.id}-${activity.id}`, 480, 260);
-                            }}
-                          />
-                          <strong>{activity.name}</strong>
-                          {activity.locationName && (
-                            <p className="map-popup-location">{activity.locationName}</p>
-                          )}
-                          {activity.address && (
-                            <p className="map-popup-address">{activity.address}</p>
-                          )}
-                          <p className="map-popup-meta">
-                            Day {entry.day} · {activity.timeOfDay || 'Anytime'}
-                            {activity.duration ? ` · ${activity.duration}` : ''}
-                          </p>
-                          {activity.description && (
-                            <p className="map-popup-desc">
-                              {activity.description.length > 70
-                                ? `${activity.description.slice(0, 70).trim()}…`
-                                : activity.description}
+                          </div>
+                          <div className="map-popup-body">
+                            {(activity.locationName || activity.address) && (
+                              <p className="map-popup-location">
+                                <MapPin size={11} style={{ flexShrink: 0 }} />
+                                {activity.locationName || activity.address}
+                              </p>
+                            )}
+                            <strong>{activity.name}</strong>
+                            <p className="map-popup-meta">
+                              Day {entry.day} · {activity.timeOfDay || 'Anytime'}
                             </p>
-                          )}
-                          {activity.links.length > 0 && (
-                            <div className="map-popup-links">
-                              {activity.links.filter((l) => l.type === 'map').map((link, i) => (
-                                <a key={`map-${i}`} href={link.url} target="_blank" rel="noopener noreferrer" className="map-popup-link map-popup-link-map">
-                                  <MapIcon size={11} />
-                                  Google Maps
-                                </a>
-                              ))}
-                              {activity.links.filter((l) => l.type !== 'map').map((link, i) => (
-                                <a key={`other-${i}`} href={link.url} target="_blank" rel="noopener noreferrer" className="map-popup-link">
-                                  <ExternalLink size={11} />
-                                  {link.label === 'Link' ? 'Website' : link.label}
-                                </a>
-                              ))}
-                            </div>
-                          )}
+                            {mapsLink && (
+                              <a href={mapsLink.url} target="_blank" rel="noopener noreferrer" className="map-popup-cta map-popup-cta-maps">
+                                <MapIcon size={12} />
+                                View on Google Maps
+                              </a>
+                            )}
+                            {activity.links.filter((l) => l.type !== 'map').length > 0 && (
+                              <div className="map-popup-links">
+                                {activity.links.filter((l) => l.type !== 'map').map((link, i) => (
+                                  <a key={`other-${i}`} href={link.url} target="_blank" rel="noopener noreferrer" className="map-popup-link">
+                                    <ExternalLink size={11} />
+                                    {link.label === 'Link' ? 'Website' : link.label}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </Popup>
                     </Marker>
@@ -559,6 +574,7 @@ export default function SidebarMap() {
 
           <div className="map-expanded-sidebar">
             {/* Filters */}
+            <p className="map-expanded-sidebar-header">Filter</p>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               <button
                 onClick={() => { setSelectedDay(null); setFocusedId(null); }}
@@ -589,6 +605,10 @@ export default function SidebarMap() {
               ))}
             </div>
 
+            <p className="map-expanded-sidebar-header" style={{ marginTop: 4 }}>
+              {displayEntries.length} {displayEntries.length === 1 ? 'Activity' : 'Activities'}
+            </p>
+
             {/* Activity list */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, overflowY: 'auto' }}>
               {displayEntries.map((entry) => {
@@ -610,26 +630,18 @@ export default function SidebarMap() {
                     style={{ cursor: hasCoords ? 'pointer' : 'default' }}
                   >
                     <div
+                      className="map-list-item-image"
                       style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 10,
-                        overflow: 'hidden',
-                        border: `1px solid ${isActive ? `${meta.color}66` : 'var(--navy-100)'}`,
+                        border: `1.5px solid ${isActive ? `${meta.color}44` : 'var(--navy-100)'}`,
                         background: 'var(--navy-50)',
-                        flexShrink: 0,
                       }}
                     >
                       {imageErrorByActivityId[activity.id] ? (
                         <div
-                          className="map-day-badge"
+                          className="map-list-item-image-fallback"
                           style={{
-                            width: '100%',
-                            height: '100%',
-                            background: `${meta.color}18`,
+                            background: `${meta.color}12`,
                             color: meta.color,
-                            fontSize: 14,
-                            borderRadius: 0,
                           }}
                         >
                           {meta.icon}
@@ -646,7 +658,6 @@ export default function SidebarMap() {
                           )}
                           alt={activity.name}
                           loading="lazy"
-                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                           onError={(e) => {
                             const img = e.currentTarget;
                             if (img.dataset.fallback === '1') {
@@ -659,18 +670,10 @@ export default function SidebarMap() {
                         />
                       )}
                     </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{
-                        fontSize: 14,
-                        fontWeight: 500,
-                        color: 'var(--navy-800)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}>
-                        {activity.name}
-                      </p>
-                      <p style={{ fontSize: 12, color: 'var(--navy-400)' }}>
+                    <div className="map-list-item-content">
+                      <p className="map-list-item-title">{activity.name}</p>
+                      <p className="map-list-item-subtitle">
+                        <span className="map-list-item-cat-dot" style={{ background: meta.color }} />
                         Day {entry.day} · {activity.timeOfDay || 'Anytime'}
                         {activity.locationName ? ` · ${activity.locationName}` : ''}
                       </p>
