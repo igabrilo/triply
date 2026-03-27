@@ -1145,11 +1145,11 @@ select {
 
 /* ── Leaflet popup overrides ── */
 .leaflet-popup-content-wrapper {
-  border-radius: 12px !important;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.05) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.22), 0 4px 10px rgba(15, 23, 42, 0.12) !important;
   padding: 0 !important;
   overflow: hidden;
-  border: none !important;
+  border: 1px solid rgba(148, 163, 184, 0.28) !important;
 }
 
 .leaflet-popup-content {
@@ -1164,14 +1164,14 @@ select {
 
 .leaflet-popup-close-button {
   z-index: 10 !important;
-  top: 4px !important;
-  right: 4px !important;
+  top: 6px !important;
+  right: 6px !important;
   width: 24px !important;
   height: 24px !important;
   display: flex !important;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.45) !important;
+  background: rgba(15, 23, 42, 0.55) !important;
   color: white !important;
   border-radius: 50% !important;
   font-size: 14px !important;
@@ -1183,7 +1183,7 @@ select {
 }
 
 .leaflet-popup-close-button:hover {
-  background: rgba(0, 0, 0, 0.65) !important;
+  background: rgba(15, 23, 42, 0.78) !important;
   color: white !important;
 }
 
@@ -1218,14 +1218,15 @@ select {
 
 /* ── Popup ── */
 .map-popup {
-  width: 232px;
-  max-width: min(232px, calc(100vw - 48px));
+  width: 252px;
+  max-width: min(252px, calc(100vw - 48px));
   line-height: 1.4;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
 }
 
 .map-popup-image {
   width: 100%;
-  height: 112px;
+  height: 122px;
   position: relative;
   overflow: hidden;
   background: var(--navy-100);
@@ -1236,6 +1237,7 @@ select {
   height: 100%;
   object-fit: cover;
   display: block;
+  transform: scale(1.01);
 }
 
 .map-popup-image-badge {
@@ -1253,13 +1255,13 @@ select {
 }
 
 .map-popup-body {
-  padding: 10px 12px 12px;
+  padding: 11px 12px 12px;
 }
 
 .map-popup-location {
   font-size: 11px;
   color: var(--navy-500);
-  margin: 0 0 2px;
+  margin: 0 0 3px;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1269,7 +1271,7 @@ select {
 }
 
 .map-popup strong {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 700;
   color: var(--navy-900);
   display: block;
@@ -1280,7 +1282,7 @@ select {
 .map-popup-meta {
   font-size: 11px;
   color: var(--navy-500);
-  margin: 4px 0 0;
+  margin: 4px 0 1px;
   font-weight: 500;
   display: flex;
   align-items: center;
@@ -1375,25 +1377,112 @@ select {
 .map-expanded {
   display: flex;
   flex: 1;
-  gap: 0;
+  gap: 12px;
   min-height: 0;
 }
 
 .map-expanded-map {
   flex: 1;
   min-width: 0;
-  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1px solid var(--navy-100);
-  border-right: none;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
   isolation: isolate;
 }
 
 .map-expanded-map .leaflet-container {
   height: 100%;
   width: 100%;
-  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  border-radius: var(--radius-lg);
   font-family: inherit;
+}
+
+.map-expanded-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 1100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.map-expanded-toolbar-label {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+}
+
+.map-expanded-toolbar-label span {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--navy-500);
+  font-weight: 700;
+}
+
+.map-expanded-toolbar-label p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--navy-800);
+  font-weight: 700;
+}
+
+.map-expanded-weather-toggle {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(100, 116, 139, 0.35);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--navy-700);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.16);
+  transition: all var(--duration-fast) ease;
+}
+
+.map-expanded-weather-toggle:hover {
+  background: #fff;
+  border-color: rgba(99, 102, 241, 0.45);
+  color: var(--primary-700);
+}
+
+.map-expanded-weather-toggle-active {
+  background: rgba(79, 70, 229, 0.92);
+  border-color: rgba(79, 70, 229, 0.95);
+  color: #fff;
+}
+
+.map-expanded-weather-toggle-active:hover {
+  background: rgba(67, 56, 202, 0.94);
+  color: #fff;
+}
+
+.map-expanded-weather-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
 }
 
 .map-expanded-sidebar {
@@ -1403,9 +1492,10 @@ select {
   flex-direction: column;
   gap: 10px;
   overflow-y: auto;
-  border-left: 1px solid var(--navy-100);
+  border: 1px solid var(--navy-100);
+  border-radius: var(--radius-lg);
   padding: 16px;
-  background: var(--surface);
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
 }
 
 .map-expanded-sidebar-header {
@@ -1517,6 +1607,105 @@ select {
   font-size: 12px;
   font-weight: 700;
   flex-shrink: 0;
+}
+
+/* ── Weather map overlay controls ── */
+.map-container,
+.map-expanded-map {
+  position: relative;
+}
+
+.weather-layer-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.weather-layer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--navy-200);
+  background: var(--surface);
+  color: var(--navy-600);
+  cursor: pointer;
+  transition: all var(--duration-fast) ease;
+  white-space: nowrap;
+}
+
+.weather-layer-chip:hover {
+  border-color: var(--navy-300);
+  background: var(--navy-50);
+}
+
+.weather-layer-chip-active {
+  background: var(--primary-600);
+  color: #fff;
+  border-color: var(--primary-600);
+}
+
+.weather-layer-chip-active:hover {
+  background: var(--primary-700);
+  border-color: var(--primary-700);
+}
+
+.weather-layer-chip-off {
+  border-color: var(--navy-200);
+  color: var(--navy-500);
+}
+
+.weather-layer-chip-off:hover {
+  border-color: var(--error);
+  color: var(--error);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.weather-legend {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 1000;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.18);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  min-width: 140px;
+  pointer-events: none;
+}
+
+.weather-legend-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--navy-800);
+  margin: 0 0 6px;
+}
+
+.weather-legend-title span {
+  font-weight: 500;
+  color: var(--navy-400);
+}
+
+.weather-legend-gradient {
+  height: 8px;
+  border-radius: 4px;
+  width: 100%;
+}
+
+.weather-legend-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--navy-500);
 }
 
 /* ============================================================
@@ -2058,17 +2247,35 @@ select {
 
 /* Ken Burns — slow zoom + gentle drift used on hero/form background images */
 @keyframes ken-burns-a {
-  from { transform: scale(1.0) translate(0%, 0%); }
-  to   { transform: scale(1.1) translate(-2%, -1%); }
+  from {
+    transform: scale(1.0) translate(0%, 0%);
+  }
+
+  to {
+    transform: scale(1.1) translate(-2%, -1%);
+  }
 }
+
 @keyframes ken-burns-b {
-  from { transform: scale(1.08) translate(1%, 0.5%); }
-  to   { transform: scale(1.0) translate(-0.5%, -1.5%); }
+  from {
+    transform: scale(1.08) translate(1%, 0.5%);
+  }
+
+  to {
+    transform: scale(1.0) translate(-0.5%, -1.5%);
+  }
 }
+
 @keyframes ken-burns-c {
-  from { transform: scale(1.0) translate(-1%, 0.5%); }
-  to   { transform: scale(1.09) translate(1.5%, -0.5%); }
+  from {
+    transform: scale(1.0) translate(-1%, 0.5%);
+  }
+
+  to {
+    transform: scale(1.09) translate(1.5%, -0.5%);
+  }
 }
+
 @keyframes fade-in {
   from {
     opacity: 0;

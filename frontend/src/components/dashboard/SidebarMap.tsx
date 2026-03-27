@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { Maximize2, MapPin, ExternalLink, Map as MapIcon, Loader } from 'lucide-react';
+import { Maximize2, MapPin, ExternalLink, Map as MapIcon, Loader, CloudSun } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
 import { geocodeAPI, tripAPI } from '@/services/api';
 import Modal from '@components/ui/Modal';
@@ -32,6 +32,137 @@ const CATEGORY_MAP: Record<string, CategoryMeta> = {
 
 const DEFAULT_META: CategoryMeta = { color: '#3b82f6', icon: '📍' };
 const FILTER_CATEGORIES = ['All', 'Food', 'Museums', 'Nature', 'Landmarks', 'Shopping'];
+
+/* ── Weather map layers (OWM Weather Maps 2.0) ── */
+
+interface WeatherLayerConfig {
+  code: string;
+  label: string;
+  units: string;
+  opacity: number;
+  colors: string[];
+  legendMin: string;
+  legendMax: string;
+  fillBound?: boolean;
+}
+
+const WEATHER_LAYERS: WeatherLayerConfig[] = [
+  {
+    code: 'TA2', label: 'Temperature', units: '°C', opacity: 0.55,
+    colors: ['#821692', '#208CEC', '#23DDDD', '#C2FF28', '#FFF028', '#FC8014'],
+    legendMin: '-40°', legendMax: '30°',
+    fillBound: true,
+  },
+  {
+    code: 'PR0', label: 'Precipitation', units: 'mm/s', opacity: 0.75,
+    colors: ['#FEF9CA', '#78F554', '#387F22', '#F2A33A', '#EB4726', '#971D13'],
+    legendMin: 'Light', legendMax: 'Heavy',
+  },
+  {
+    code: 'CL', label: 'Clouds', units: '%', opacity: 0.55,
+    colors: ['#FFFFFF', '#F7F7FF', '#E9E9DF', '#D2D2D2'],
+    legendMin: 'Clear', legendMax: 'Overcast',
+  },
+  {
+    code: 'WS10', label: 'Wind', units: 'm/s', opacity: 0.65,
+    colors: ['#FFFFFF', '#EECECC', '#B364BC', '#3F213B', '#744CAC', '#4600AF'],
+    legendMin: 'Calm', legendMax: 'Strong',
+  },
+  {
+    code: 'HRD0', label: 'Humidity', units: '%', opacity: 0.75,
+    colors: ['#db1200', '#965700', '#ede100', '#8bd600', '#00a808', '#000099'],
+    legendMin: '0%', legendMax: '100%',
+  },
+  {
+    code: 'SD0', label: 'Snow', units: 'm', opacity: 0.75,
+    colors: ['#EDEDED', '#A5E5EF', '#00CCE8', '#3333CC', '#C12CB0', '#790087'],
+    legendMin: '0', legendMax: '4m',
+  },
+];
+
+const OWM_RAW_KEY = (import.meta.env.VITE_OPENWEATHERMAP_API_KEY as string | undefined)?.trim();
+const OWM_API_KEY =
+  OWM_RAW_KEY && OWM_RAW_KEY !== 'your_key_here' && OWM_RAW_KEY.length > 0 ? OWM_RAW_KEY : undefined;
+
+function getForecastDateUnix(startDate: string | undefined, selectedDay: number | null): number | undefined {
+  if (selectedDay == null || !startDate) return undefined;
+  if (!Number.isFinite(selectedDay) || selectedDay < 1) return undefined;
+
+  const dayDate = new Date(`${startDate}T12:00:00Z`);
+  if (Number.isNaN(dayDate.getTime())) return undefined;
+
+  dayDate.setUTCDate(dayDate.getUTCDate() + selectedDay - 1);
+  return Math.floor(dayDate.getTime() / 1000);
+}
+
+function owmWeather2TileUrl(
+  op: string,
+  appId: string,
+  tileOpacity: number,
+  fillBound?: boolean,
+  forecastDateUnix?: number,
+): string {
+  const q = new URLSearchParams();
+  q.set('appid', appId);
+  q.set('opacity', String(Math.min(1, Math.max(0, tileOpacity))));
+  if (fillBound) q.set('fill_bound', 'true');
+  if (typeof forecastDateUnix === 'number') q.set('date', String(forecastDateUnix));
+  return `https://maps.openweathermap.org/maps/2.0/weather/${op}/{z}/{x}/{y}?${q.toString()}`;
+}
+
+function OwmWeatherTileLayer({
+  layerOp,
+  appId,
+  forecastDateUnix,
+}: {
+  layerOp: string;
+  appId: string;
+  forecastDateUnix?: number;
+}) {
+  const map = useMap();
+  const layerCfg = WEATHER_LAYERS.find((l) => l.code === layerOp);
+  const opacity = layerCfg?.opacity ?? 0.65;
+  const fillBound = layerCfg?.fillBound;
+
+  useEffect(() => {
+    const url = owmWeather2TileUrl(layerOp, appId, opacity, fillBound, forecastDateUnix);
+    const layer = L.tileLayer(url, {
+      attribution: 'Weather © <a href="https://openweathermap.org/">OpenWeather</a>',
+      opacity: 1,
+      maxZoom: 20,
+      maxNativeZoom: 18,
+    });
+    layer.addTo(map);
+    const onTileError = () => {
+      console.warn(
+        '[Triply] OpenWeatherMap tile failed (check VITE_OPENWEATHERMAP_API_KEY and Weather Maps 2.0 access).',
+      );
+    };
+    layer.on('tileerror', onTileError);
+    return () => {
+      layer.off('tileerror', onTileError);
+      map.removeLayer(layer);
+    };
+  }, [map, layerOp, appId, opacity, fillBound, forecastDateUnix]);
+
+  return null;
+}
+
+function WeatherLegend({ layer }: { layer: WeatherLayerConfig }) {
+  return (
+    <div className="weather-legend">
+      <p className="weather-legend-title">{layer.label} <span>({layer.units})</span></p>
+      <div
+        className="weather-legend-gradient"
+        style={{ background: `linear-gradient(to right, ${layer.colors.join(', ')})` }}
+      />
+      <div className="weather-legend-labels">
+        <span>{layer.legendMin}</span>
+        <span>{layer.legendMax}</span>
+      </div>
+    </div>
+  );
+}
 
 function getCategoryMeta(category?: string | null): CategoryMeta {
   if (!category) return DEFAULT_META;
@@ -180,6 +311,7 @@ export default function SidebarMap() {
   const [isAutoGeocoding, setIsAutoGeocoding] = useState(false);
   const [imageErrorByActivityId, setImageErrorByActivityId] = useState<Record<string, boolean>>({});
   const [fallbackStayPoint, setFallbackStayPoint] = useState<FallbackStayPoint | null>(null);
+  const [weatherLayer, setWeatherLayer] = useState<string | null>(null);
   const autoGeocodeAttemptedRef = useRef<Record<string, boolean>>({});
 
   const allEntries = useMemo<MapActivityEntry[]>(() => {
@@ -358,6 +490,22 @@ export default function SidebarMap() {
     return map;
   }, [currentTrip]);
 
+  const weatherLayerConfig = useMemo(
+    () => (weatherLayer ? WEATHER_LAYERS.find((l) => l.code === weatherLayer) ?? null : null),
+    [weatherLayer],
+  );
+
+  const selectedForecastDateUnix = useMemo(
+    () => getForecastDateUnix(currentTrip?.formData?.startDate, selectedDay),
+    [currentTrip?.formData?.startDate, selectedDay],
+  );
+
+  const hasWeatherApi = Boolean(OWM_API_KEY);
+  const handleToggleWeather = () => {
+    if (!hasWeatherApi) return;
+    setWeatherLayer((prev) => (prev ? null : 'TA2'));
+  };
+
   const focusedEntry = focusedId
     ? mappableEntries.find((e) => e.activity.id === focusedId)
     : null;
@@ -438,25 +586,25 @@ export default function SidebarMap() {
                 url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
                 maxZoom={20}
               />
-            <FitBounds entries={mappableEntries} />
-            {mappableEntries.map((entry) => {
-              const meta = getCategoryMeta(entry.activity.category);
-              const stepNum = String(stepNumbers.get(entry.activity.id) ?? '');
-              const markerImgUrl = buildPlacePhotoProxyUrl(
-                [entry.activity.locationName, entry.activity.name].filter(Boolean).join(', ') || entry.activity.name,
-                120, 120, destination,
-              );
-              return (
-                <Marker
-                  key={entry.activity.id}
-                  position={[entry.activity.lat!, entry.activity.lng!]}
-                  icon={createPhotoMarkerIcon(meta.color, meta.icon, stepNum, markerImgUrl)}
-                  interactive={false}
-                />
-              );
-            })}
-          </MapContainer>
-        </div>
+              <FitBounds entries={mappableEntries} />
+              {mappableEntries.map((entry) => {
+                const meta = getCategoryMeta(entry.activity.category);
+                const stepNum = String(stepNumbers.get(entry.activity.id) ?? '');
+                const markerImgUrl = buildPlacePhotoProxyUrl(
+                  [entry.activity.locationName, entry.activity.name].filter(Boolean).join(', ') || entry.activity.name,
+                  120, 120, destination,
+                );
+                return (
+                  <Marker
+                    key={entry.activity.id}
+                    position={[entry.activity.lat!, entry.activity.lng!]}
+                    icon={createPhotoMarkerIcon(meta.color, meta.icon, stepNum, markerImgUrl)}
+                    interactive={false}
+                  />
+                );
+              })}
+            </MapContainer>
+          </div>
 
           <p style={{ fontSize: 11, color: 'var(--navy-400)', marginTop: 6, textAlign: 'center' }}>
             {mappableEntries.length} location{mappableEntries.length !== 1 ? 's' : ''} · Click to expand
@@ -468,11 +616,27 @@ export default function SidebarMap() {
       <Modal isOpen={isExpanded} onClose={() => setIsExpanded(false)} title="Map" size="xl">
         <div className="map-expanded">
           <div className="map-expanded-map">
+            <div className="map-expanded-toolbar">
+              <div className="map-expanded-toolbar-label">
+                <span>Trip map</span>
+                <p>{selectedDay === null ? 'All days' : `Day ${selectedDay}`}</p>
+              </div>
+              <button
+                className={`map-expanded-weather-toggle ${weatherLayer ? 'map-expanded-weather-toggle-active' : ''}`}
+                onClick={handleToggleWeather}
+                disabled={!hasWeatherApi}
+                title={!hasWeatherApi ? 'Set VITE_OPENWEATHERMAP_API_KEY to enable weather tiles' : undefined}
+              >
+                <CloudSun size={14} />
+                {!hasWeatherApi ? 'Weather unavailable' : weatherLayer ? 'Weather on' : 'Weather off'}
+              </button>
+            </div>
             {isExpanded && mappableEntries.length > 0 && (
               <MapContainer
                 center={defaultCenter}
                 zoom={13}
                 scrollWheelZoom={true}
+                zoomControl={false}
                 style={{ height: '100%', width: '100%' }}
               >
                 <TileLayer
@@ -480,6 +644,13 @@ export default function SidebarMap() {
                   url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
                   maxZoom={20}
                 />
+                {weatherLayer && OWM_API_KEY && (
+                  <OwmWeatherTileLayer
+                    layerOp={weatherLayer}
+                    appId={OWM_API_KEY}
+                    forecastDateUnix={selectedForecastDateUnix}
+                  />
+                )}
 
                 {!focusedEntry && <FitBounds entries={mappableEntries} />}
                 {focusedEntry && (
@@ -570,6 +741,9 @@ export default function SidebarMap() {
                 })}
               </MapContainer>
             )}
+            {weatherLayer && weatherLayerConfig ? (
+              <WeatherLegend layer={weatherLayerConfig} />
+            ) : null}
           </div>
 
           <div className="map-expanded-sidebar">
@@ -604,6 +778,23 @@ export default function SidebarMap() {
                 />
               ))}
             </div>
+
+            {hasWeatherApi && weatherLayer && (
+              <>
+                <p className="map-expanded-sidebar-header" style={{ marginTop: 4 }}>Weather</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {WEATHER_LAYERS.map((l) => (
+                    <button
+                      key={l.code}
+                      className={`weather-layer-chip ${weatherLayer === l.code ? 'weather-layer-chip-active' : ''}`}
+                      onClick={() => setWeatherLayer(l.code)}
+                    >
+                      {l.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
 
             <p className="map-expanded-sidebar-header" style={{ marginTop: 4 }}>
               {displayEntries.length} {displayEntries.length === 1 ? 'Activity' : 'Activities'}
