@@ -6,6 +6,7 @@ import { useTripStore } from '@/store/tripStore';
 import { geocodeAPI, tripAPI } from '@/services/api';
 import Chip from '@components/ui/Chip';
 import Modal from '@components/ui/Modal';
+import WeatherParticlesLayer from '@components/dashboard/WeatherParticlesLayer';
 import type { Activity, Stay } from '@/types';
 import { buildActivityImage, buildFallbackImage, buildPlacePhotoProxyUrl } from '@/utils/mediaImages';
 
@@ -767,6 +768,10 @@ export default function MapSection() {
                     forecastDateUnix={selectedForecastDateUnix}
                   />
                 )}
+                <WeatherParticlesLayer
+                  weatherLayerCode={weatherLayer}
+                  enabled={Boolean((weatherLayer === 'PR0' || weatherLayer === 'WS10') && OWM_API_KEY)}
+                />
 
                 {!focusedEntry && <FitBoundsPoints points={allMapPoints.map((p) => [p.lat, p.lng] as [number, number])} />}
                 {focusedEntry && (
@@ -1067,6 +1072,10 @@ export default function MapSection() {
                     forecastDateUnix={selectedForecastDateUnix}
                   />
                 )}
+                <WeatherParticlesLayer
+                  weatherLayerCode={weatherLayer}
+                  enabled={Boolean((weatherLayer === 'PR0' || weatherLayer === 'WS10') && OWM_API_KEY)}
+                />
 
                 {!focusedEntry && <FitBoundsPoints points={allMapPoints.map((p) => [p.lat, p.lng] as [number, number])} />}
                 {focusedEntry && (

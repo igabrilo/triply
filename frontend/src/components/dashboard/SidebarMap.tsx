@@ -7,6 +7,7 @@ import { useTripStore } from '@/store/tripStore';
 import { geocodeAPI, tripAPI } from '@/services/api';
 import Modal from '@components/ui/Modal';
 import Chip from '@components/ui/Chip';
+import WeatherParticlesLayer from '@components/dashboard/WeatherParticlesLayer';
 import type { Activity } from '@/types';
 import { buildActivityImage, buildFallbackImage, buildPlacePhotoProxyUrl } from '@/utils/mediaImages';
 
@@ -651,6 +652,10 @@ export default function SidebarMap() {
                     forecastDateUnix={selectedForecastDateUnix}
                   />
                 )}
+                <WeatherParticlesLayer
+                  weatherLayerCode={weatherLayer}
+                  enabled={Boolean((weatherLayer === 'PR0' || weatherLayer === 'WS10') && OWM_API_KEY)}
+                />
 
                 {!focusedEntry && <FitBounds entries={mappableEntries} />}
                 {focusedEntry && (
