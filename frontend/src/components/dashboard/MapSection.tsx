@@ -7,6 +7,13 @@ import { geocodeAPI, tripAPI } from '@/services/api';
 import Chip from '@components/ui/Chip';
 import Modal from '@components/ui/Modal';
 import WeatherParticlesLayer from '@components/dashboard/WeatherParticlesLayer';
+import WeatherTimeSlider from '@components/dashboard/WeatherTimeSlider';
+import WeatherDestinationPanel from '@components/dashboard/WeatherDestinationPanel';
+import {
+  clampForecastUnix,
+  getInitialForecastUnix,
+  getWeatherWindowBounds,
+} from '@components/dashboard/weatherForecastUtils';
 import type { Activity, Stay } from '@/types';
 import { buildActivityImage, buildFallbackImage, buildPlacePhotoProxyUrl } from '@/utils/mediaImages';
 
@@ -53,34 +60,34 @@ interface WeatherLayerConfig {
 /** OWM Weather Maps 2.0 (3-hour step) layer ops — URL: /maps/2.0/weather/{op}/{z}/{x}/{y} */
 const WEATHER_LAYERS: WeatherLayerConfig[] = [
   {
-    code: 'TA2', label: 'Temperature', units: '°C', opacity: 0.55,
-    colors: ['#821692', '#208CEC', '#23DDDD', '#C2FF28', '#FFF028', '#FC8014'],
-    legendMin: '-40°', legendMax: '30°',
+    code: 'TA2', label: 'Temperature', units: '°C', opacity: 0.5,
+    colors: ['#4A2C7A', '#375ECC', '#4C96E2', '#7DD9FF', '#C7ED6D', '#F6DF45', '#F49533', '#DD4B2B'],
+    legendMin: '-30°', legendMax: '40°',
     fillBound: true,
   },
   {
-    code: 'PR0', label: 'Precipitation', units: 'mm/s', opacity: 0.75,
-    colors: ['#FEF9CA', '#78F554', '#387F22', '#F2A33A', '#EB4726', '#971D13'],
+    code: 'PR0', label: 'Precipitation', units: 'mm/s', opacity: 0.66,
+    colors: ['#D7F7FF', '#9EE8FF', '#66D9C6', '#39C46C', '#9CCF43', '#F2D34A', '#F39A35', '#E95A29', '#B82121'],
     legendMin: 'Light', legendMax: 'Heavy',
   },
   {
-    code: 'CL', label: 'Clouds', units: '%', opacity: 0.55,
-    colors: ['#FFFFFF', '#F7F7FF', '#E9E9DF', '#D2D2D2'],
-    legendMin: 'Clear', legendMax: 'Overcast',
-  },
-  {
-    code: 'WS10', label: 'Wind', units: 'm/s', opacity: 0.65,
-    colors: ['#FFFFFF', '#EECECC', '#B364BC', '#3F213B', '#744CAC', '#4600AF'],
-    legendMin: 'Calm', legendMax: 'Strong',
-  },
-  {
-    code: 'HRD0', label: 'Humidity', units: '%', opacity: 0.75,
-    colors: ['#db1200', '#965700', '#ede100', '#8bd600', '#00a808', '#000099'],
+    code: 'CL', label: 'Clouds', units: '%', opacity: 0.46,
+    colors: ['#F8FCFF', '#DCE7F2', '#BAC8D7', '#93A1B2', '#667689'],
     legendMin: '0%', legendMax: '100%',
   },
   {
-    code: 'SD0', label: 'Snow', units: 'm', opacity: 0.75,
-    colors: ['#EDEDED', '#A5E5EF', '#00CCE8', '#3333CC', '#C12CB0', '#790087'],
+    code: 'WS10', label: 'Wind', units: 'm/s', opacity: 0.58,
+    colors: ['#F1F7FF', '#D7E9FF', '#B3D5FF', '#84B5FF', '#5C92E8', '#3D6CBF'],
+    legendMin: '0', legendMax: '30 m/s',
+  },
+  {
+    code: 'HRD0', label: 'Humidity', units: '%', opacity: 0.6,
+    colors: ['#B6412C', '#D07A2D', '#E8B740', '#A0CF52', '#4AB485', '#338CC2'],
+    legendMin: '0%', legendMax: '100%',
+  },
+  {
+    code: 'SD0', label: 'Snow', units: 'm', opacity: 0.58,
+    colors: ['#F1F7FF', '#C7E7F7', '#8ED2F1', '#5BAAF0', '#5578D8', '#7A5FC6'],
     legendMin: '0', legendMax: '4m',
   },
 ];
@@ -88,17 +95,6 @@ const WEATHER_LAYERS: WeatherLayerConfig[] = [
 const OWM_RAW_KEY = (import.meta.env.VITE_OPENWEATHERMAP_API_KEY as string | undefined)?.trim();
 const OWM_API_KEY =
   OWM_RAW_KEY && OWM_RAW_KEY !== 'your_key_here' && OWM_RAW_KEY.length > 0 ? OWM_RAW_KEY : undefined;
-
-function getForecastDateUnix(startDate: string | undefined, selectedDay: number | null): number | undefined {
-  if (selectedDay == null || !startDate) return undefined;
-  if (!Number.isFinite(selectedDay) || selectedDay < 1) return undefined;
-
-  const dayDate = new Date(`${startDate}T12:00:00Z`);
-  if (Number.isNaN(dayDate.getTime())) return undefined;
-
-  dayDate.setUTCDate(dayDate.getUTCDate() + selectedDay - 1);
-  return Math.floor(dayDate.getTime() / 1000);
-}
 
 /** Standard WM 2.0 tiles: https://maps.openweathermap.org/maps/2.0/weather/{op}/{z}/{x}/{y}?appid=… */
 function owmWeather2TileUrl(
@@ -130,27 +126,39 @@ function OwmWeatherTileLayer({
   const layerCfg = WEATHER_LAYERS.find((l) => l.code === layerOp);
   const opacity = layerCfg?.opacity ?? 0.65;
   const fillBound = layerCfg?.fillBound;
+  const layerRef = useRef<L.TileLayer | null>(null);
 
   useEffect(() => {
-    const url = owmWeather2TileUrl(layerOp, appId, opacity, fillBound, forecastDateUnix);
-    const layer = L.tileLayer(url, {
+    const layer = L.tileLayer('', {
       attribution: 'Weather © <a href="https://openweathermap.org/">OpenWeather</a>',
       opacity: 1,
       maxZoom: 20,
       maxNativeZoom: 18,
     });
+    layerRef.current = layer;
     layer.addTo(map);
+
     const onTileError = () => {
       console.warn(
         '[Triply] OpenWeatherMap tile failed (check VITE_OPENWEATHERMAP_API_KEY and Weather Maps 2.0 access).',
       );
     };
     layer.on('tileerror', onTileError);
+
     return () => {
       layer.off('tileerror', onTileError);
       map.removeLayer(layer);
+      layerRef.current = null;
     };
-  }, [map, layerOp, appId, opacity, fillBound, forecastDateUnix]);
+  }, [map]);
+
+  useEffect(() => {
+    const layer = layerRef.current;
+    if (!layer) return;
+
+    const url = owmWeather2TileUrl(layerOp, appId, opacity, fillBound, forecastDateUnix);
+    layer.setUrl(url);
+  }, [layerOp, appId, opacity, fillBound, forecastDateUnix]);
 
   return null;
 }
@@ -275,17 +283,31 @@ interface StaticMapPoint {
   mapsUrl?: string;
 }
 
-function FitBoundsPoints({ points }: { points: Array<[number, number]> }) {
+function FitBoundsPoints({
+  points,
+  zoomOutForWeather = false,
+}: {
+  points: Array<[number, number]>;
+  zoomOutForWeather?: boolean;
+}) {
   const map = useMap();
 
   useEffect(() => {
     if (points.length === 0) return;
+
     if (points.length === 1) {
-      map.setView(points[0], 13, { animate: true });
+      map.setView(points[0], zoomOutForWeather ? 5 : 13, { animate: true });
     } else {
-      map.fitBounds(L.latLngBounds(points), { padding: [50, 50], animate: true });
+      const fitOptions: L.FitBoundsOptions = {
+        padding: zoomOutForWeather ? [140, 140] : [50, 50],
+        animate: true,
+      };
+      if (zoomOutForWeather) {
+        fitOptions.maxZoom = 5;
+      }
+      map.fitBounds(L.latLngBounds(points), fitOptions);
     }
-  }, [points, map]);
+  }, [points, map, zoomOutForWeather]);
 
   return null;
 }
@@ -652,16 +674,25 @@ export default function MapSection() {
     [weatherLayer],
   );
 
+  const weatherWindow = useMemo(() => getWeatherWindowBounds(), []);
+  const [weatherForecastUnix, setWeatherForecastUnix] = useState<number>(() => getInitialForecastUnix(undefined));
+
+  useEffect(() => {
+    setWeatherForecastUnix(getInitialForecastUnix(currentTrip?.formData?.startDate));
+  }, [currentTrip?.id, currentTrip?.formData?.startDate]);
+
   const hasWeatherApi = Boolean(OWM_API_KEY);
   const handleToggleWeather = () => {
     if (!hasWeatherApi) return;
+    setFocusedId(null);
     setWeatherLayer((prev) => (prev ? null : 'TA2'));
   };
 
-  const selectedForecastDateUnix = useMemo(
-    () => getForecastDateUnix(currentTrip?.formData?.startDate, selectedDay),
-    [currentTrip?.formData?.startDate, selectedDay],
-  );
+  const handleWeatherTimeChange = (nextUnix: number) => {
+    setWeatherForecastUnix(
+      clampForecastUnix(nextUnix, weatherWindow.startUnix, weatherWindow.endUnix),
+    );
+  };
 
   if (!currentTrip) return null;
   const destination = currentTrip.formData.destinations[0] || 'destination';
@@ -670,6 +701,9 @@ export default function MapSection() {
     allMapPoints.length > 0
       ? [allMapPoints[0].lat, allMapPoints[0].lng]
       : [48.8566, 2.3522]; // Paris fallback
+
+  const weatherDestinationLat = allMapPoints.length > 0 ? allMapPoints[0].lat : null;
+  const weatherDestinationLng = allMapPoints.length > 0 ? allMapPoints[0].lng : null;
 
   const handleListItemClick = (entry: MapActivityEntry) => {
     if (entry.activity.lat == null || entry.activity.lng == null) return;
@@ -727,19 +761,29 @@ export default function MapSection() {
           </div>
 
           {/* Category Filter */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
-            {FILTER_CATEGORIES.map((cat) => (
-              <Chip
-                key={cat}
-                label={cat}
-                size="sm"
-                selected={activeCategory === cat}
-                onToggle={() => { setActiveCategory(cat); setFocusedId(null); }}
-              />
-            ))}
-          </div>
+          {!weatherLayer && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+              {FILTER_CATEGORIES.map((cat) => (
+                <Chip
+                  key={cat}
+                  label={cat}
+                  size="sm"
+                  selected={activeCategory === cat}
+                  onToggle={() => { setActiveCategory(cat); setFocusedId(null); }}
+                />
+              ))}
+            </div>
+          )}
 
           <WeatherLayerSelector weatherLayer={weatherLayer} setWeatherLayer={setWeatherLayer} />
+          {hasWeatherApi && weatherLayer && (
+            <WeatherTimeSlider
+              valueUnix={weatherForecastUnix}
+              startUnix={weatherWindow.startUnix}
+              endUnix={weatherWindow.endUnix}
+              onChange={handleWeatherTimeChange}
+            />
+          )}
           {weatherLayer && !OWM_API_KEY && (
             <p className="form-hint" style={{ marginBottom: 12 }}>
               Set <code style={{ fontSize: 12 }}>VITE_OPENWEATHERMAP_API_KEY</code> in{' '}
@@ -765,7 +809,7 @@ export default function MapSection() {
                   <OwmWeatherTileLayer
                     layerOp={weatherLayer}
                     appId={OWM_API_KEY}
-                    forecastDateUnix={selectedForecastDateUnix}
+                    forecastDateUnix={weatherForecastUnix}
                   />
                 )}
                 <WeatherParticlesLayer
@@ -773,8 +817,13 @@ export default function MapSection() {
                   enabled={Boolean((weatherLayer === 'PR0' || weatherLayer === 'WS10') && OWM_API_KEY)}
                 />
 
-                {!focusedEntry && <FitBoundsPoints points={allMapPoints.map((p) => [p.lat, p.lng] as [number, number])} />}
-                {focusedEntry && (
+                {(!focusedEntry || weatherLayer) && (
+                  <FitBoundsPoints
+                    points={allMapPoints.map((p) => [p.lat, p.lng] as [number, number])}
+                    zoomOutForWeather={Boolean(weatherLayer)}
+                  />
+                )}
+                {focusedEntry && !weatherLayer && (
                   <FlyTo lat={focusedEntry.activity.lat!} lng={focusedEntry.activity.lng!} />
                 )}
 
@@ -1069,7 +1118,7 @@ export default function MapSection() {
                   <OwmWeatherTileLayer
                     layerOp={weatherLayer}
                     appId={OWM_API_KEY}
-                    forecastDateUnix={selectedForecastDateUnix}
+                    forecastDateUnix={weatherForecastUnix}
                   />
                 )}
                 <WeatherParticlesLayer
@@ -1077,8 +1126,13 @@ export default function MapSection() {
                   enabled={Boolean((weatherLayer === 'PR0' || weatherLayer === 'WS10') && OWM_API_KEY)}
                 />
 
-                {!focusedEntry && <FitBoundsPoints points={allMapPoints.map((p) => [p.lat, p.lng] as [number, number])} />}
-                {focusedEntry && (
+                {(!focusedEntry || weatherLayer) && (
+                  <FitBoundsPoints
+                    points={allMapPoints.map((p) => [p.lat, p.lng] as [number, number])}
+                    zoomOutForWeather={Boolean(weatherLayer)}
+                  />
+                )}
+                {focusedEntry && !weatherLayer && (
                   <FlyTo lat={focusedEntry.activity.lat!} lng={focusedEntry.activity.lng!} />
                 )}
 
@@ -1227,137 +1281,161 @@ export default function MapSection() {
           </div>
 
           <div className="map-expanded-sidebar">
-            {/* Filters */}
-            <p className="map-expanded-sidebar-header">Filter</p>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button
-                onClick={() => { setSelectedDay(null); setFocusedId(null); }}
-                className={`tab-item tab-sm ${selectedDay === null ? 'tab-active' : ''}`}
-              >
-                All days
-              </button>
-              {currentTrip.plan.map((day) => (
-                <button
-                  key={day.day}
-                  onClick={() => { setSelectedDay(day.day); setFocusedId(null); }}
-                  className={`tab-item tab-sm ${selectedDay === day.day ? 'tab-active' : ''}`}
-                >
-                  Day {day.day}
-                </button>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {FILTER_CATEGORIES.map((cat) => (
-                <Chip
-                  key={cat}
-                  label={cat}
-                  size="sm"
-                  selected={activeCategory === cat}
-                  onToggle={() => { setActiveCategory(cat); setFocusedId(null); }}
-                />
-              ))}
-            </div>
-
-            {hasWeatherApi && weatherLayer && (
+            {weatherLayer ? (
               <>
-                <p className="map-expanded-sidebar-header" style={{ marginTop: 4 }}>Weather</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {WEATHER_LAYERS.map((l) => (
+                <p className="map-expanded-sidebar-header">Weather</p>
+                {hasWeatherApi ? (
+                  <>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {WEATHER_LAYERS.map((l) => (
+                        <button
+                          key={l.code}
+                          className={`weather-layer-chip ${weatherLayer === l.code ? 'weather-layer-chip-active' : ''}`}
+                          onClick={() => setWeatherLayer(l.code)}
+                        >
+                          {l.label}
+                        </button>
+                      ))}
+                    </div>
+                    <WeatherTimeSlider
+                      valueUnix={weatherForecastUnix}
+                      startUnix={weatherWindow.startUnix}
+                      endUnix={weatherWindow.endUnix}
+                      onChange={handleWeatherTimeChange}
+                    />
+                    <WeatherDestinationPanel
+                      destinationLabel={destination}
+                      lat={weatherDestinationLat}
+                      lng={weatherDestinationLng}
+                      forecastUnix={weatherForecastUnix}
+                      apiKey={OWM_API_KEY}
+                    />
+                  </>
+                ) : (
+                  <p className="form-hint">
+                    Set <code style={{ fontSize: 12 }}>VITE_OPENWEATHERMAP_API_KEY</code> in{' '}
+                    <code style={{ fontSize: 12 }}>frontend/.env</code> and restart the dev server.
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                {/* Filters */}
+                <p className="map-expanded-sidebar-header">Filter</p>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => { setSelectedDay(null); setFocusedId(null); }}
+                    className={`tab-item tab-sm ${selectedDay === null ? 'tab-active' : ''}`}
+                  >
+                    All days
+                  </button>
+                  {currentTrip.plan.map((day) => (
                     <button
-                      key={l.code}
-                      className={`weather-layer-chip ${weatherLayer === l.code ? 'weather-layer-chip-active' : ''}`}
-                      onClick={() => setWeatherLayer(l.code)}
+                      key={day.day}
+                      onClick={() => { setSelectedDay(day.day); setFocusedId(null); }}
+                      className={`tab-item tab-sm ${selectedDay === day.day ? 'tab-active' : ''}`}
                     >
-                      {l.label}
+                      Day {day.day}
                     </button>
                   ))}
                 </div>
-              </>
-            )}
 
-            <p className="map-expanded-sidebar-header" style={{ marginTop: 4 }}>
-              {filteredEntries.length} {filteredEntries.length === 1 ? 'Activity' : 'Activities'}
-            </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {FILTER_CATEGORIES.map((cat) => (
+                    <Chip
+                      key={cat}
+                      label={cat}
+                      size="sm"
+                      selected={activeCategory === cat}
+                      onToggle={() => { setActiveCategory(cat); setFocusedId(null); }}
+                    />
+                  ))}
+                </div>
 
-            {/* Activity list */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, overflowY: 'auto' }}>
-              {filteredEntries.map((entry) => {
-                const { activity } = entry;
-                const meta = getCategoryMeta(activity.category);
-                const hasCoords = activity.lat != null && activity.lng != null;
-                const isActive = focusedId === activity.id;
+                <p className="map-expanded-sidebar-header" style={{ marginTop: 4 }}>
+                  {filteredEntries.length} {filteredEntries.length === 1 ? 'Activity' : 'Activities'}
+                </p>
 
-                return (
-                  <div
-                    key={activity.id}
-                    className={`map-list-item ${isActive ? 'map-list-item-active' : ''}`}
-                    onClick={() => {
-                      if (!hasCoords) return;
-                      setFocusedId(activity.id);
-                    }}
-                    onMouseEnter={() => setHoveredId(activity.id)}
-                    onMouseLeave={() => setHoveredId(null)}
-                    style={{ cursor: hasCoords ? 'pointer' : 'default' }}
-                  >
-                    <div
-                      className="map-list-item-image"
-                      style={{
-                        border: `1.5px solid ${isActive ? `${meta.color}44` : 'var(--navy-100)'}`,
-                        background: 'var(--navy-50)',
-                      }}
-                    >
-                      {activityImageErrorById[activity.id] ? (
+                {/* Activity list */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, overflowY: 'auto' }}>
+                  {filteredEntries.map((entry) => {
+                    const { activity } = entry;
+                    const meta = getCategoryMeta(activity.category);
+                    const hasCoords = activity.lat != null && activity.lng != null;
+                    const isActive = focusedId === activity.id;
+
+                    return (
+                      <div
+                        key={activity.id}
+                        className={`map-list-item ${isActive ? 'map-list-item-active' : ''}`}
+                        onClick={() => {
+                          if (!hasCoords) return;
+                          setFocusedId(activity.id);
+                        }}
+                        onMouseEnter={() => setHoveredId(activity.id)}
+                        onMouseLeave={() => setHoveredId(null)}
+                        style={{ cursor: hasCoords ? 'pointer' : 'default' }}
+                      >
                         <div
-                          className="map-list-item-image-fallback"
+                          className="map-list-item-image"
                           style={{
-                            background: `${meta.color}12`,
-                            color: meta.color,
+                            border: `1.5px solid ${isActive ? `${meta.color}44` : 'var(--navy-100)'}`,
+                            background: 'var(--navy-50)',
                           }}
                         >
-                          {meta.icon}
-                        </div>
-                      ) : (
-                        <img
-                          src={buildActivityImage(
-                            [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
-                            destination,
-                            activity.category || 'activity',
-                            320,
-                            240,
-                            `map-list-${currentTrip.id}-${activity.id}`,
+                          {activityImageErrorById[activity.id] ? (
+                            <div
+                              className="map-list-item-image-fallback"
+                              style={{
+                                background: `${meta.color}12`,
+                                color: meta.color,
+                              }}
+                            >
+                              {meta.icon}
+                            </div>
+                          ) : (
+                            <img
+                              src={buildActivityImage(
+                                [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
+                                destination,
+                                activity.category || 'activity',
+                                320,
+                                240,
+                                `map-list-${currentTrip.id}-${activity.id}`,
+                              )}
+                              alt={activity.name}
+                              loading="lazy"
+                              onError={(e) => {
+                                const img = e.currentTarget;
+                                if (img.dataset.fallback === '1') {
+                                  setActivityImageErrorById((prev) => ({ ...prev, [activity.id]: true }));
+                                  return;
+                                }
+                                img.dataset.fallback = '1';
+                                img.src = buildFallbackImage(`map-list-${currentTrip.id}-${activity.id}`, 320, 240);
+                              }}
+                            />
                           )}
-                          alt={activity.name}
-                          loading="lazy"
-                          onError={(e) => {
-                            const img = e.currentTarget;
-                            if (img.dataset.fallback === '1') {
-                              setActivityImageErrorById((prev) => ({ ...prev, [activity.id]: true }));
-                              return;
-                            }
-                            img.dataset.fallback = '1';
-                            img.src = buildFallbackImage(`map-list-${currentTrip.id}-${activity.id}`, 320, 240);
-                          }}
-                        />
-                      )}
-                    </div>
-                    <div className="map-list-item-content">
-                      <p className="map-list-item-title">{activity.name}</p>
-                      <p className="map-list-item-subtitle">
-                        <span className="map-list-item-cat-dot" style={{ background: meta.color }} />
-                        Day {entry.day} · {activity.timeOfDay || 'Anytime'}
-                        {activity.locationName ? ` · ${activity.locationName}` : ''}
-                      </p>
-                    </div>
-                    {hasCoords ? (
-                      <MapPin size={14} style={{ color: meta.color, flexShrink: 0 }} />
-                    ) : (
-                      <MapPin size={14} style={{ color: 'var(--navy-200)', flexShrink: 0 }} />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                        </div>
+                        <div className="map-list-item-content">
+                          <p className="map-list-item-title">{activity.name}</p>
+                          <p className="map-list-item-subtitle">
+                            <span className="map-list-item-cat-dot" style={{ background: meta.color }} />
+                            Day {entry.day} · {activity.timeOfDay || 'Anytime'}
+                            {activity.locationName ? ` · ${activity.locationName}` : ''}
+                          </p>
+                        </div>
+                        {hasCoords ? (
+                          <MapPin size={14} style={{ color: meta.color, flexShrink: 0 }} />
+                        ) : (
+                          <MapPin size={14} style={{ color: 'var(--navy-200)', flexShrink: 0 }} />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </Modal>
