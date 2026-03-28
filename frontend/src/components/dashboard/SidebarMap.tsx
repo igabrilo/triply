@@ -124,7 +124,7 @@ function OwmWeatherTileLayer({
 
   useEffect(() => {
     const layer = L.tileLayer('', {
-      attribution: 'Weather © <a href="https://openweathermap.org/">OpenWeather</a>',
+      attribution: '<span class="leaflet-attribution-weather">Weather</span> © <a href="https://openweathermap.org/">OpenWeather</a>',
       opacity: 1,
       maxZoom: 20,
       maxNativeZoom: 18,

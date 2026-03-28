@@ -1091,6 +1091,44 @@ select {
   font-family: inherit;
 }
 
+/* ── Attribution footer ── */
+.map-container .leaflet-control-attribution,
+.map-expanded-map .leaflet-control-attribution {
+  margin: 0 10px 10px 0 !important;
+  padding: 4px 10px !important;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--navy-500);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.map-container .leaflet-control-attribution a,
+.map-expanded-map .leaflet-control-attribution a {
+  color: var(--primary-700);
+  font-weight: 700;
+  text-decoration: none;
+  transition: color var(--duration-fast) ease;
+}
+
+.map-container .leaflet-control-attribution a:hover,
+.map-expanded-map .leaflet-control-attribution a:hover {
+  color: var(--primary-800);
+  text-decoration: underline;
+}
+
+.map-container .leaflet-control-attribution .leaflet-attribution-weather,
+.map-expanded-map .leaflet-control-attribution .leaflet-attribution-weather {
+  color: var(--primary-700);
+  font-weight: 700;
+}
+
 /* ── Zoom controls ── */
 .map-container .leaflet-bar,
 .map-expanded-map .leaflet-bar {
