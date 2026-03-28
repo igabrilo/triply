@@ -7,7 +7,14 @@ import {
    CloudRain,
    CloudSnow,
    CloudSun,
+   Clock3,
+   Compass,
+   Droplets,
+   Gauge,
+   MapPin,
    Sun,
+   Thermometer,
+   Wind,
 } from 'lucide-react';
 
 type WeatherIconType =
@@ -244,11 +251,64 @@ export default function WeatherDestinationPanel({
    const latLabel = (forecast?.city?.coord?.lat ?? lat ?? 0).toFixed(2);
    const lngLabel = (forecast?.city?.coord?.lon ?? lng ?? 0).toFixed(2);
 
+   const stats = forecastEntry
+      ? [
+         {
+            key: 'feels',
+            label: 'Feels like',
+            value: formatTemp(forecastEntry.main.feels_like),
+            icon: <Thermometer size={12} />,
+         },
+         {
+            key: 'wind',
+            label: 'Wind speed',
+            value: formatNumber(forecastEntry.wind?.speed, 'm/s'),
+            icon: <Wind size={12} />,
+         },
+         {
+            key: 'direction',
+            label: 'Wind direction',
+            value: `${forecastEntry.wind?.deg ?? '--'}° ${getWindDirectionLabel(forecastEntry.wind?.deg)}`,
+            icon: <Compass size={12} />,
+         },
+         {
+            key: 'humidity',
+            label: 'Humidity',
+            value:
+               typeof forecastEntry.main.humidity === 'number'
+                  ? `${Math.round(forecastEntry.main.humidity)} %`
+                  : '-- %',
+            icon: <Droplets size={12} />,
+         },
+         {
+            key: 'clouds',
+            label: 'Clouds',
+            value:
+               typeof forecastEntry.clouds?.all === 'number'
+                  ? `${Math.round(forecastEntry.clouds.all)} %`
+                  : '-- %',
+            icon: <Cloud size={12} />,
+         },
+         {
+            key: 'pressure',
+            label: 'Pressure',
+            value:
+               typeof forecastEntry.main.pressure === 'number'
+                  ? `${Math.round(forecastEntry.main.pressure)} hPa`
+                  : '-- hPa',
+            icon: <Gauge size={12} />,
+         },
+      ]
+      : [];
+
    return (
       <div className="weather-destination-card">
          <div className="weather-destination-head">
             <h4>{cityName}</h4>
-            <p>{latLabel}, {lngLabel}</p>
+            <p>
+               <MapPin size={12} />
+               {latLabel}, {lngLabel}
+            </p>
          </div>
 
          {loading && <p className="weather-destination-note">Loading weather details...</p>}
@@ -261,21 +321,29 @@ export default function WeatherDestinationPanel({
                      <p className="weather-destination-temp">{formatTemp(forecastEntry.main.temp)}</p>
                      <p className="weather-destination-desc">{weatherDescription}</p>
                   </div>
-                  <div className="weather-destination-icon" aria-hidden="true">
-                     <WeatherIcon size={34} />
+                  <div className="weather-destination-icon-shell" aria-hidden="true">
+                     <div className="weather-destination-icon">
+                        <WeatherIcon size={34} />
+                     </div>
                   </div>
                </div>
 
                <div className="weather-destination-stats">
-                  <p><span>Feels like</span><strong>{formatTemp(forecastEntry.main.feels_like)}</strong></p>
-                  <p><span>Wind speed</span><strong>{formatNumber(forecastEntry.wind?.speed, 'm/s')}</strong></p>
-                  <p><span>Wind direction</span><strong>{forecastEntry.wind?.deg ?? '--'}° {getWindDirectionLabel(forecastEntry.wind?.deg)}</strong></p>
-                  <p><span>Humidity</span><strong>{typeof forecastEntry.main.humidity === 'number' ? `${Math.round(forecastEntry.main.humidity)} %` : '-- %'}</strong></p>
-                  <p><span>Clouds</span><strong>{typeof forecastEntry.clouds?.all === 'number' ? `${Math.round(forecastEntry.clouds.all)} %` : '-- %'}</strong></p>
-                  <p><span>Pressure</span><strong>{typeof forecastEntry.main.pressure === 'number' ? `${Math.round(forecastEntry.main.pressure)} hPa` : '-- hPa'}</strong></p>
+                  {stats.map((stat) => (
+                     <article key={stat.key} className="weather-destination-stat">
+                        <p className="weather-destination-stat-label">
+                           <span className="weather-destination-stat-icon">{stat.icon}</span>
+                           {stat.label}
+                        </p>
+                        <strong>{stat.value}</strong>
+                     </article>
+                  ))}
                </div>
 
-               <p className="weather-destination-updated">{formatForecastDate(forecastEntry.dt)}</p>
+               <p className="weather-destination-updated">
+                  <Clock3 size={12} />
+                  {formatForecastDate(forecastEntry.dt)}
+               </p>
             </>
          )}
       </div>
