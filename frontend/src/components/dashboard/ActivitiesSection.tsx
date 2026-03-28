@@ -1,10 +1,29 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Compass, Plus, Bookmark, MapPin, ExternalLink, Ticket } from 'lucide-react';
 import DayPicker from '@components/dashboard/DayPicker';
 import { useTripStore } from '@/store/tripStore';
 import { buildActivityImage, buildFallbackImage, buildMapsSearchUrl, buildTicketsSearchUrl } from '@/utils/mediaImages';
 
 const CATEGORY_FILTERS = ['all', 'attractions', 'food', 'nightlife', 'outdoors', 'shopping', 'custom'];
+const TITLE_STOP_WORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'and',
+  'at',
+  'in',
+  'on',
+  'to',
+  'of',
+  'for',
+  'with',
+  'visit',
+  'explore',
+  'discover',
+  'tour',
+  'trip',
+  'experience',
+]);
 
 function cleanActivityTitle(rawTitle: string, destination: string): string {
   const title = (rawTitle || '').trim();
@@ -34,6 +53,44 @@ function cleanActivityDescription(description: string, placeQuery: string, locat
   return base;
 }
 
+function normalizeActivityKey(rawValue: string): string {
+  return (rawValue || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function buildActivityTitleTokens(rawTitle: string, destination: string): string[] {
+  const normalizedDestination = normalizeActivityKey(destination || '');
+  const destinationTokens = new Set(normalizedDestination.split(' ').filter(Boolean));
+
+  return normalizeActivityKey(cleanActivityTitle(rawTitle || '', destination) || rawTitle || '')
+    .split(' ')
+    .filter((token) => token && !TITLE_STOP_WORDS.has(token) && !destinationTokens.has(token));
+}
+
+function hasEnoughTokenOverlap(aTokens: string[], bTokens: string[]): boolean {
+  if (aTokens.length === 0 || bTokens.length === 0) return false;
+
+  const uniqueA = Array.from(new Set(aTokens));
+  const uniqueB = Array.from(new Set(bTokens));
+  const bSet = new Set(uniqueB);
+  const overlapCount = uniqueA.filter((token) => bSet.has(token)).length;
+  const minLen = Math.min(uniqueA.length, uniqueB.length);
+
+  if (minLen <= 2) return overlapCount === minLen;
+  return overlapCount / minLen >= 0.75;
+}
+
+function hasLocationOverlap(aLocation: string, bLocation: string): boolean {
+  if (!aLocation || !bLocation) return false;
+  if (aLocation === bLocation) return true;
+  return aLocation.includes(bLocation) || bLocation.includes(aLocation);
+}
+
 export default function ActivitiesSection() {
   const { currentTrip, addSuggestedActivityToDay, generateMoreActivities, updateSuggestedActivityStatus, setActiveTab, setSelectedDay } = useTripStore();
   const [activeActivityId, setActiveActivityId] = useState<string | null>(null);
@@ -45,6 +102,36 @@ export default function ActivitiesSection() {
   const [savingActivityId, setSavingActivityId] = useState<string | null>(null);
   const [imageErrorByActivityId, setImageErrorByActivityId] = useState<Record<string, boolean>>({});
   if (!currentTrip) return null;
+
+  const destination = currentTrip.formData.destinations[0] || 'destination';
+
+  const plannedSignatures = useMemo(() => {
+    const ids = new Set<string>();
+    const titleKeys = new Set<string>();
+    const compositeKeys = new Set<string>();
+    const signatures: Array<{ titleTokens: string[]; locationKey: string }> = [];
+
+    for (const day of currentTrip.plan || []) {
+      for (const activity of day.activities || []) {
+        const id = String(activity.id || '').trim();
+        if (id) ids.add(id);
+
+        const titleTokens = buildActivityTitleTokens(activity.name || '', destination);
+        const titleKey = titleTokens.join(' ');
+        const locationKey = normalizeActivityKey(activity.locationName || activity.address || '');
+
+        if (titleKey) titleKeys.add(titleKey);
+        if (titleKey && locationKey) {
+          compositeKeys.add(`${titleKey}::${locationKey}`);
+        }
+        if (titleTokens.length > 0) {
+          signatures.push({ titleTokens, locationKey });
+        }
+      }
+    }
+
+    return { ids, titleKeys, compositeKeys, signatures };
+  }, [currentTrip.plan, destination]);
 
   const handleSave = async (activityId: string, currentStatus: string) => {
     setSaveError('');
@@ -59,8 +146,6 @@ export default function ActivitiesSection() {
     }
   };
 
-  const destination = currentTrip.formData.destinations[0] || 'destination';
-
   const addToDay = async (dayNumber: number) => {
     if (!activeActivityId) return;
     setAddError('');
@@ -74,7 +159,52 @@ export default function ActivitiesSection() {
     }
   };
 
-  const activeActivities = currentTrip.activities.filter((a) => a.status !== 'dismissed');
+  const bucketActivities = currentTrip.activities.filter((a) => a.status !== 'dismissed');
+  const activeActivities = useMemo(() => {
+    const kept: Array<{ titleTokens: string[]; locationKey: string }> = [];
+    const deduped: typeof bucketActivities = [];
+
+    for (const activity of bucketActivities) {
+      const id = String(activity.id || '').trim();
+      const titleTokens = buildActivityTitleTokens(activity.title || activity.placeQuery || '', destination);
+      const titleKey = titleTokens.join(' ');
+      const locationKey = normalizeActivityKey(activity.locationName || activity.placeQuery || activity.address || '');
+      const compositeKey = titleKey && locationKey ? `${titleKey}::${locationKey}` : '';
+
+      const inPlanById = id ? plannedSignatures.ids.has(id) : false;
+      const inPlanByTitle = titleKey ? plannedSignatures.titleKeys.has(titleKey) : false;
+      const inPlanByComposite = compositeKey ? plannedSignatures.compositeKeys.has(compositeKey) : false;
+      const inPlanByFuzzyTitle =
+        titleTokens.length > 0 &&
+        plannedSignatures.signatures.some((sig) => hasEnoughTokenOverlap(titleTokens, sig.titleTokens));
+      const inPlanByFuzzyLocationAndTitle =
+        titleTokens.length > 0 &&
+        !!locationKey &&
+        plannedSignatures.signatures.some(
+          (sig) => !!sig.locationKey && hasLocationOverlap(locationKey, sig.locationKey) && hasEnoughTokenOverlap(titleTokens, sig.titleTokens),
+        );
+
+      if (inPlanById || inPlanByTitle || inPlanByComposite || inPlanByFuzzyTitle || inPlanByFuzzyLocationAndTitle) {
+        continue;
+      }
+
+      const duplicateInBucket =
+        titleTokens.length > 0 &&
+        kept.some((saved) => {
+          const sameTitle = hasEnoughTokenOverlap(titleTokens, saved.titleTokens);
+          if (!sameTitle) return false;
+          if (!locationKey || !saved.locationKey) return true;
+          return hasLocationOverlap(locationKey, saved.locationKey);
+        });
+
+      if (duplicateInBucket) continue;
+
+      kept.push({ titleTokens, locationKey });
+      deduped.push(activity);
+    }
+
+    return deduped;
+  }, [bucketActivities, destination, plannedSignatures]);
   const filteredActivities = activeActivities.filter((a) => {
     const byCategory = category === 'all' || (a.category || '').toLowerCase() === category;
     const bySearch =
@@ -85,6 +215,7 @@ export default function ActivitiesSection() {
     return byCategory && bySearch;
   });
   const hasAnyActivities = activeActivities.length > 0;
+  const allBucketActivitiesAlreadyPlanned = bucketActivities.length > 0 && !hasAnyActivities;
 
   return (
     <div className="card" style={{ padding: 24 }}>
@@ -118,9 +249,13 @@ export default function ActivitiesSection() {
 
       {!hasAnyActivities ? (
         <div className="item-card" style={{ textAlign: 'center', padding: '22px 18px' }}>
-          <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--navy-900)' }}>No activity suggestions yet</p>
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: 'var(--navy-900)' }}>
+            {allBucketActivitiesAlreadyPlanned ? 'All activity suggestions are already in your plan' : 'No activity suggestions yet'}
+          </p>
           <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--navy-500)' }}>
-            Generate AI activities, then add the ones you want to each day.
+            {allBucketActivitiesAlreadyPlanned
+              ? 'Generate more AI activities to discover new options.'
+              : 'Generate AI activities, then add the ones you want to each day.'}
           </p>
           <div style={{ marginTop: 12 }}>
             <button
@@ -135,7 +270,7 @@ export default function ActivitiesSection() {
                 }
               }}
             >
-              <Compass size={14} /> {isSuggesting ? 'Generating...' : 'Generate Activities'}
+              <Compass size={14} /> {isSuggesting ? 'Generating...' : allBucketActivitiesAlreadyPlanned ? 'Generate More Activities' : 'Generate Activities'}
             </button>
           </div>
         </div>
@@ -170,9 +305,9 @@ export default function ActivitiesSection() {
               activity.externalUrl ||
               (isAttraction
                 ? buildTicketsSearchUrl(
-                    activity.placeQuery || activity.locationName || activity.title || '',
-                    destination,
-                  )
+                  activity.placeQuery || activity.locationName || activity.title || '',
+                  destination,
+                )
                 : null);
             const displayTitle = cleanActivityTitle(activity.title || '', destination) || activity.title;
             const displayDescription = cleanActivityDescription(
