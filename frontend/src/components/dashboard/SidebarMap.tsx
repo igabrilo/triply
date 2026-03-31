@@ -51,40 +51,47 @@ interface WeatherLayerConfig {
   colors: string[];
   legendMin: string;
   legendMax: string;
+  palette?: string;
   fillBound?: boolean;
 }
 
 const WEATHER_LAYERS: WeatherLayerConfig[] = [
   {
-    code: 'TA2', label: 'Temperature', units: '°C', opacity: 0.5,
-    colors: ['#4A2C7A', '#375ECC', '#4C96E2', '#7DD9FF', '#C7ED6D', '#F6DF45', '#F49533', '#DD4B2B'],
-    legendMin: '-30°', legendMax: '40°',
+    code: 'TA2', label: 'Temperature', units: '°C', opacity: 0.52,
+    colors: ['#5A2CA0', '#4E43BA', '#3F63D4', '#3F89E7', '#45B7E5', '#5BD093', '#A5DB5C', '#F0D84C', '#F6A13A', '#CA5A2D', '#5F1B10'],
+    legendMin: '-70°', legendMax: '50°',
+    palette: '-70:5A2CA0;-55:4E43BA;-40:3F63D4;-25:3F89E7;-10:45B7E5;0:5BD093;10:A5DB5C;20:F0D84C;30:F6A13A;40:CA5A2D;50:5F1B10',
     fillBound: true,
   },
   {
-    code: 'PR0', label: 'Precipitation', units: 'mm/s', opacity: 0.66,
-    colors: ['#D7F7FF', '#9EE8FF', '#66D9C6', '#39C46C', '#9CCF43', '#F2D34A', '#F39A35', '#E95A29', '#B82121'],
-    legendMin: 'Light', legendMax: 'Heavy',
+    code: 'PR0', label: 'Precipitation', units: 'mm/h', opacity: 0.68,
+    colors: ['#E8F1F6', '#D6F5FF', '#B9EEFF', '#8DDEF7', '#66C7E4', '#66C69B', '#89C167', '#C1BA67', '#D694B3', '#B85CCF', '#8E3AB6'],
+    legendMin: '0 mm/h', legendMax: '40 mm/h',
+    palette: '0.000005:E8F1F6;0.000020:D6F5FF;0.000050:B9EEFF;0.000100:8DDEF7;0.000200:66C7E4;0.000400:66C69B;0.000700:89C167;0.001000:C1BA67;0.001400:D694B3;0.002000:B85CCF;0.003000:8E3AB6',
   },
   {
-    code: 'CL', label: 'Clouds', units: '%', opacity: 0.46,
-    colors: ['#F8FCFF', '#DCE7F2', '#BAC8D7', '#93A1B2', '#667689'],
+    code: 'CL', label: 'Clouds', units: '%', opacity: 0.5,
+    colors: ['#F6F8FA', '#EFF4F7', '#E6EDF2', '#D8E3EA', '#C8D7E1', '#B5C8D5'],
     legendMin: '0%', legendMax: '100%',
+    palette: '0:FFFFFF00;10:F5F8FB22;20:EEF4F844;40:E3ECF277;60:D8E3EAB3;80:C8D7E1D9;100:B5C8D5FF',
   },
   {
-    code: 'WS10', label: 'Wind', units: 'm/s', opacity: 0.58,
-    colors: ['#F1F7FF', '#D7E9FF', '#B3D5FF', '#84B5FF', '#5C92E8', '#3D6CBF'],
-    legendMin: '0', legendMax: '30 m/s',
+    code: 'WS10', label: 'Wind', units: 'm/s', opacity: 0.62,
+    colors: ['#5C84C6', '#4F9FD1', '#54BFB1', '#67CE74', '#A5D84B', '#E4C948', '#F09A34', '#E35E2E', '#C8281F'],
+    legendMin: '0 m/s', legendMax: '29 m/s',
+    palette: '0:5C84C6;4:4F9FD1;8:54BFB1;12:67CE74;16:A5D84B;20:E4C948;24:F09A34;27:E35E2E;29:C8281F',
   },
   {
-    code: 'HRD0', label: 'Humidity', units: '%', opacity: 0.6,
-    colors: ['#B6412C', '#D07A2D', '#E8B740', '#A0CF52', '#4AB485', '#338CC2'],
+    code: 'HRD0', label: 'Humidity', units: '%', opacity: 0.62,
+    colors: ['#C84531', '#D97B3E', '#E9BF57', '#A9D05E', '#5FBE8B', '#4C99CA', '#3A6ABD'],
     legendMin: '0%', legendMax: '100%',
+    palette: '0:C84531;20:D97B3E;40:E9BF57;55:A9D05E;70:5FBE8B;85:4C99CA;100:3A6ABD',
   },
   {
-    code: 'SD0', label: 'Snow', units: 'm', opacity: 0.58,
-    colors: ['#F1F7FF', '#C7E7F7', '#8ED2F1', '#5BAAF0', '#5578D8', '#7A5FC6'],
-    legendMin: '0', legendMax: '4m',
+    code: 'SD0', label: 'Snow', units: 'm', opacity: 0.62,
+    colors: ['#F3FAFF', '#DDF3FF', '#BEEBFF', '#99DAFF', '#77C1F8', '#6298E6', '#6A6FD5', '#7C53C1'],
+    legendMin: '0 m', legendMax: '4 m',
+    palette: '0.05:F3FAFF;0.1:DDF3FF;0.2:BEEBFF;0.3:99DAFF;0.5:77C1F8;0.8:6298E6;1.2:6A6FD5;4.0:7C53C1',
   },
 ];
 
@@ -97,12 +104,14 @@ function owmWeather2TileUrl(
   appId: string,
   tileOpacity: number,
   fillBound?: boolean,
+  palette?: string,
   forecastDateUnix?: number,
 ): string {
   const q = new URLSearchParams();
   q.set('appid', appId);
   q.set('opacity', String(Math.min(1, Math.max(0, tileOpacity))));
   if (fillBound) q.set('fill_bound', 'true');
+  if (palette) q.set('palette', palette);
   if (typeof forecastDateUnix === 'number') q.set('date', String(forecastDateUnix));
   return `https://maps.openweathermap.org/maps/2.0/weather/${op}/{z}/{x}/{y}?${q.toString()}`;
 }
@@ -120,6 +129,7 @@ function OwmWeatherTileLayer({
   const layerCfg = WEATHER_LAYERS.find((l) => l.code === layerOp);
   const opacity = layerCfg?.opacity ?? 0.65;
   const fillBound = layerCfg?.fillBound;
+  const palette = layerCfg?.palette;
   const layerRef = useRef<L.TileLayer | null>(null);
 
   useEffect(() => {
@@ -150,9 +160,9 @@ function OwmWeatherTileLayer({
     const layer = layerRef.current;
     if (!layer) return;
 
-    const url = owmWeather2TileUrl(layerOp, appId, opacity, fillBound, forecastDateUnix);
+    const url = owmWeather2TileUrl(layerOp, appId, opacity, fillBound, palette, forecastDateUnix);
     layer.setUrl(url);
-  }, [layerOp, appId, opacity, fillBound, forecastDateUnix]);
+  }, [layerOp, appId, opacity, fillBound, palette, forecastDateUnix]);
 
   return null;
 }
