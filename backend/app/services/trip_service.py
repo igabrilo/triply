@@ -288,6 +288,85 @@ def _resolve_activity_geo_fields(activity: dict, destination_hint: str):
     return maps_url, location_name, address, lat, lng
 
 
+def _resolve_activity_cached_image(trip: Trip, activity: dict, destination_hint: str) -> str | None:
+    cached_url = (activity.get('cached_image_url') or activity.get('cachedImageUrl') or '').strip()
+    if cached_url:
+        return cached_url
+
+    query = (
+        activity.get('image_query')
+        or activity.get('imageQuery')
+        or activity.get('place_query')
+        or activity.get('location_name')
+        or activity.get('address')
+        or activity.get('title')
+        or ''
+    )
+    query = str(query).strip()
+    if not query:
+        return None
+
+    try:
+        from app.services.geocoding_service import _resolve_and_cache_image
+        activity_id = str(activity.get('id') or uuid.uuid4())
+        return _resolve_and_cache_image(
+            str(trip.id),
+            'activity',
+            activity_id,
+            query,
+            destination_hint,
+            place_id=activity.get('place_id') or activity.get('placeId'),
+            photo_reference=activity.get('photo_reference') or activity.get('photoReference'),
+            photo_name=activity.get('photo_name') or activity.get('photoName'),
+        )
+    except Exception:
+        logger.debug("Skipping activity image cache for trip %s", trip.id, exc_info=True)
+        return None
+
+
+def _resolve_plan_item_cached_image(trip: Trip, day_data: dict, item_data: dict, item_index: int) -> str | None:
+    cached_url = (item_data.get('cachedImageUrl') or item_data.get('cached_image_url') or '').strip()
+    if cached_url:
+        return cached_url
+
+    query = (
+        item_data.get('imageQuery')
+        or item_data.get('image_query')
+        or item_data.get('placeQuery')
+        or item_data.get('place_query')
+        or item_data.get('locationName')
+        or item_data.get('location_name')
+        or item_data.get('address')
+        or item_data.get('title')
+        or ''
+    )
+    query = str(query).strip()
+    if not query:
+        return None
+
+    item_id_hint = item_data.get('id')
+    if not item_id_hint:
+        day_idx = day_data.get('dayIndex', day_data.get('day_index', 0))
+        item_id_hint = f"day_{day_idx}_item_{item_index}"
+
+    destination_hint = str(trip.destination or '').strip()
+    try:
+        from app.services.geocoding_service import _resolve_and_cache_image
+        return _resolve_and_cache_image(
+            str(trip.id),
+            'activity',
+            str(item_id_hint),
+            query,
+            destination_hint,
+            place_id=item_data.get('placeId') or item_data.get('place_id'),
+            photo_reference=item_data.get('photoReference') or item_data.get('photo_reference'),
+            photo_name=item_data.get('photoName') or item_data.get('photo_name'),
+        )
+    except Exception:
+        logger.debug("Skipping plan-item image cache for trip %s", trip.id, exc_info=True)
+        return None
+
+
 class TripService:
     """Service for trip CRUD operations against the normalized schema."""
 
@@ -814,6 +893,7 @@ class TripService:
             activity,
             destination_hint,
         )
+        cached_image_url = _resolve_activity_cached_image(trip, activity, destination_hint)
 
         ordered_items = sorted(day.plan_items, key=lambda pi: pi.sort_order)
         insert_idx = _best_insert_index(ordered_items, lat, lng)
@@ -833,6 +913,7 @@ class TripService:
             lat=lat,
             lng=lng,
             maps_url=maps_url,
+            cached_image_url=cached_image_url,
             sort_order=insert_idx,
             status='suggested',
         ))
@@ -888,6 +969,7 @@ class TripService:
                 activity,
                 destination_hint,
             )
+            cached_image_url = _resolve_activity_cached_image(trip, activity, destination_hint)
 
             ordered_items = sorted(day.plan_items, key=lambda pi: pi.sort_order)
             insert_idx = _best_insert_index(ordered_items, lat, lng)
@@ -908,6 +990,7 @@ class TripService:
                 lat=lat,
                 lng=lng,
                 maps_url=maps_url,
+                cached_image_url=cached_image_url,
                 sort_order=insert_idx,
                 status='suggested',
             )
@@ -956,6 +1039,7 @@ class TripService:
             'lng': target_item.lng,
             'maps_url': target_item.maps_url,
             'image_query': target_item.location_name or target_item.title,
+            'cached_image_url': target_item.cached_image_url,
         })
         ai_generated['activities'] = activities
         constraints['aiGenerated'] = ai_generated
@@ -1024,7 +1108,11 @@ class TripService:
         """Replace all stay options from AI edit output."""
         from app.services.geocoding_service import enrich_stays
 
-        stays_data = enrich_stays(stays_data)
+        stays_data = enrich_stays(
+            stays_data,
+            trip_id=str(trip.id),
+            destination_hint=str(trip.destination or ''),
+        )
         formatted = []
         for s in stays_data:
             formatted.append({
@@ -1109,6 +1197,7 @@ def _persist_days(trip, days_list):
         )
         db.session.add(day)
         for idx, item_data in enumerate(day_data.get('items', [])):
+            cached_url = _resolve_plan_item_cached_image(trip, day_data, item_data, idx)
             db.session.add(PlanItem(
                 trip_day=day,
                 title=item_data.get('title', ''),
@@ -1123,6 +1212,7 @@ def _persist_days(trip, days_list):
                 lng=item_data.get('lng'),
                 external_url=item_data.get('externalUrl', item_data.get('external_url')),
                 maps_url=item_data.get('mapsUrl', item_data.get('maps_url')),
+                cached_image_url=cached_url,
                 sort_order=idx,
             ))
 

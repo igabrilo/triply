@@ -197,6 +197,7 @@ function transformDays(backendDays: any[]): PlanDay[] {
         lng: item.lng ?? null,
         locationName: item.locationName || item.location_name || '',
         address: item.address || '',
+        cachedImageUrl: item.cachedImageUrl || item.cached_image_url || '',
       })),
     };
   });

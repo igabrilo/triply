@@ -3,6 +3,15 @@ function seed(value: string): string {
   return normalized.slice(0, 60) || 'triply';
 }
 
+const LOCAL_TRIP_PLACEHOLDER = '/trip-placeholder.svg';
+
+function localPlaceholderUrl(imageSeed: string, width: number, height: number): string {
+  const safeSeed = encodeURIComponent(seed(imageSeed || 'triply'));
+  const safeWidth = Math.max(120, Math.min(Math.round(width || 640), 1600));
+  const safeHeight = Math.max(120, Math.min(Math.round(height || 360), 1600));
+  return `${LOCAL_TRIP_PLACEHOLDER}?seed=${safeSeed}&w=${safeWidth}&h=${safeHeight}`;
+}
+
 export function buildAiImage(prompt: string, width: number, height: number, imageSeed?: string): string {
   const safePrompt = encodeURIComponent(prompt || 'travel destination photo');
   const safeSeed = encodeURIComponent(seed(imageSeed || prompt || 'triply'));
@@ -10,10 +19,7 @@ export function buildAiImage(prompt: string, width: number, height: number, imag
 }
 
 export function buildFallbackImage(fallbackSeed: string, width: number, height: number): string {
-  const safeSeed = encodeURIComponent(seed(fallbackSeed || 'triply'));
-  const safeWidth = Math.max(120, Math.min(Math.round(width || 640), 1600));
-  const safeHeight = Math.max(120, Math.min(Math.round(height || 360), 1600));
-  return `https://picsum.photos/seed/${safeSeed}/${safeWidth}/${safeHeight}`;
+  return localPlaceholderUrl(fallbackSeed, width, height);
 }
 
 export function buildMapsSearchUrl(query: string): string {
@@ -27,12 +33,9 @@ export function buildTicketsSearchUrl(query: string, destination?: string): stri
 }
 
 export function buildPlacePhotoProxyUrl(query: string, width = 640, height?: number, destination?: string): string {
-  const safeQuery = encodeURIComponent((query || '').trim());
-  const clampedWidth = Math.max(120, Math.min(Math.round(width || 640), 1600));
-  const heightPart = height ? `&h=${Math.max(120, Math.min(Math.round(height), 1600))}` : '';
-  const dest = (destination || '').trim();
-  const destPart = dest ? `&destination=${encodeURIComponent(dest)}` : '';
-  return `/api/media/place-photo?q=${safeQuery}&w=${clampedWidth}${heightPart}${destPart}`;
+  const seedValue = `${query || ''}-${destination || ''}`;
+  const targetHeight = height || Math.round(width * 0.66);
+  return localPlaceholderUrl(seedValue, width, targetHeight);
 }
 
 export function buildStayPhotoProxyUrl(params: {
@@ -44,19 +47,16 @@ export function buildStayPhotoProxyUrl(params: {
   height?: number;
   destination?: string;
 }): string {
-  const clampedWidth = Math.max(120, Math.min(Math.round(params.width || 640), 1600));
-  const search = new URLSearchParams();
-  search.set('w', String(clampedWidth));
-  if (params.height) {
-    search.set('h', String(Math.max(120, Math.min(Math.round(params.height), 1600))));
-  }
-  if (params.placeId) search.set('pid', params.placeId);
-  if (params.photoReference) search.set('pref', params.photoReference);
-  if (params.photoName) search.set('pname', params.photoName);
-  if (params.query) search.set('q', params.query);
-  const dest = (params.destination || '').trim();
-  if (dest) search.set('destination', dest);
-  return `/api/media/place-photo?${search.toString()}`;
+  const width = params.width || 640;
+  const height = params.height || Math.round(width * 0.66);
+  const seedValue = [
+    params.query,
+    params.placeId,
+    params.photoReference,
+    params.photoName,
+    params.destination,
+  ].filter(Boolean).join('-');
+  return localPlaceholderUrl(seedValue || 'stay', width, height);
 }
 
 export function buildPlaceImage(place: string, destination: string, width: number, height: number, _imageSeed: string): string {

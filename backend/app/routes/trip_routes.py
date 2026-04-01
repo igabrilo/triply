@@ -307,6 +307,19 @@ def stream_trip_generation(trip_id):
                 track_guardrail_retry('activities', activities_score, retry_score)
                 if retry_score >= activities_score:
                     activities_payload = retry_payload
+
+            from app.services.geocoding_service import enrich_activities
+            destination_hint = (
+                (form_data.get('destinations') or [''])[0]
+                if isinstance(form_data.get('destinations'), list)
+                else form_data.get('destinations')
+            ) or trip.destination or ''
+            activities_payload = enrich_activities(
+                activities_payload,
+                destination_hint=str(destination_hint),
+                trip_id=str(trip.id),
+            )
+
             TripService.persist_generated_section(trip, 'activities', activities_payload)
             yield _sse('section_ready', {
                 'section': 'activities',
@@ -921,6 +934,7 @@ def add_activity_to_day(trip_id, activity_id):
 @require_auth
 def generate_more_activities(trip_id):
     from app.services import ai_service
+    from app.services.geocoding_service import enrich_activities
 
     user = g.current_user
     trip = TripService.get_trip(trip_id, str(user.id))
@@ -958,6 +972,18 @@ def generate_more_activities(trip_id):
                 row['image_query'] = row.get('image_query') or query
             row['status'] = row.get('status') or 'suggested'
             generated_rows.append(row)
+
+        destination_hint = (
+            (form_data.get('destinations') or [''])[0]
+            if isinstance(form_data.get('destinations'), list)
+            else form_data.get('destinations')
+        ) or trip.destination or ''
+        generated_rows = enrich_activities(
+            generated_rows,
+            destination_hint=str(destination_hint),
+            trip_id=str(trip.id),
+        )
+
         appended = TripService.append_generated_activities(
             trip,
             generated_rows,

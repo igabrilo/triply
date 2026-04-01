@@ -2,9 +2,8 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { Maximize2, MapPin, ExternalLink, Map as MapIcon, Loader, CloudSun } from 'lucide-react';
+import { Maximize2, MapPin, ExternalLink, Map as MapIcon, CloudSun } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
-import { geocodeAPI, tripAPI } from '@/services/api';
 import Modal from '@components/ui/Modal';
 import Chip from '@components/ui/Chip';
 import WeatherParticlesLayer from '@components/dashboard/WeatherParticlesLayer';
@@ -335,16 +334,14 @@ function createActivePhotoMarkerIcon(color: string, emoji: string, step?: string
 /* ── Main component ── */
 
 export default function SidebarMap() {
-  const { currentTrip, selectedDay, setSelectedDay, loadTrip } = useTripStore();
+  const { currentTrip, selectedDay, setSelectedDay } = useTripStore();
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeCategory, setActiveCategory] = useState('All');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
-  const [isAutoGeocoding, setIsAutoGeocoding] = useState(false);
   const [imageErrorByActivityId, setImageErrorByActivityId] = useState<Record<string, boolean>>({});
   const [fallbackStayPoint, setFallbackStayPoint] = useState<FallbackStayPoint | null>(null);
   const [weatherLayer, setWeatherLayer] = useState<string | null>(null);
-  const autoGeocodeAttemptedRef = useRef<Record<string, boolean>>({});
 
   const allEntries = useMemo<MapActivityEntry[]>(() => {
     if (!currentTrip) return [];
@@ -354,43 +351,6 @@ export default function SidebarMap() {
   }, [currentTrip]);
 
   const hasPlanActivities = allEntries.length > 0;
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const autoGeocode = async () => {
-      if (!currentTrip) return;
-      if (!hasPlanActivities) return;
-
-      const hasMissingCoords = allEntries.some(
-        (entry) => entry.activity.lat == null || entry.activity.lng == null
-      );
-      if (!hasMissingCoords) return;
-
-      const tripKey = String(currentTrip.id);
-      if (autoGeocodeAttemptedRef.current[tripKey]) return;
-      autoGeocodeAttemptedRef.current[tripKey] = true;
-
-      setIsAutoGeocoding(true);
-      try {
-        await tripAPI.geocodeTrip(currentTrip.id);
-        if (!cancelled) {
-          await loadTrip(currentTrip.id);
-        }
-      } catch {
-        // Keep map usable even if background geocoding fails.
-      } finally {
-        if (!cancelled) {
-          setIsAutoGeocoding(false);
-        }
-      }
-    };
-
-    autoGeocode();
-    return () => {
-      cancelled = true;
-    };
-  }, [currentTrip, allEntries, hasPlanActivities, loadTrip]);
 
   const filteredEntries = useMemo(() => {
     let entries = allEntries;
@@ -414,57 +374,19 @@ export default function SidebarMap() {
   }, [currentTrip]);
 
   useEffect(() => {
-    let cancelled = false;
+    if (!currentTrip || !primaryStay || primaryStay.lat == null || primaryStay.lng == null) {
+      setFallbackStayPoint(null);
+      return;
+    }
 
-    const resolveStayPoint = async () => {
-      if (!currentTrip || !primaryStay) {
-        if (!cancelled) setFallbackStayPoint(null);
-        return;
-      }
-
-      if (primaryStay.lat != null && primaryStay.lng != null) {
-        if (!cancelled) {
-          const stayLat = Number(primaryStay.lat);
-          const stayLng = Number(primaryStay.lng);
-          setFallbackStayPoint({
-            lat: stayLat,
-            lng: stayLng,
-            locationName: primaryStay.neighborhood || primaryStay.type || 'Primary stay',
-            mapsUrl: primaryStay.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${stayLat},${stayLng}`,
-          });
-        }
-        return;
-      }
-
-      const destinationHint = currentTrip.formData.destinations[0] || '';
-      const query = [primaryStay.name, primaryStay.neighborhood, destinationHint].filter(Boolean).join(', ');
-      if (!query.trim()) {
-        if (!cancelled) setFallbackStayPoint(null);
-        return;
-      }
-
-      try {
-        const res = await geocodeAPI.searchPlace(query);
-        const geo = res?.result;
-        if (!cancelled && geo?.lat != null && geo?.lng != null) {
-          const lat = Number(geo.lat);
-          const lng = Number(geo.lng);
-          setFallbackStayPoint({
-            lat,
-            lng,
-            locationName: geo.location_name || geo.address || primaryStay.neighborhood || primaryStay.type || 'Primary stay',
-            mapsUrl: primaryStay.mapsUrl || geo.maps_url || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`,
-          });
-        }
-      } catch {
-        if (!cancelled) setFallbackStayPoint(null);
-      }
-    };
-
-    resolveStayPoint();
-    return () => {
-      cancelled = true;
-    };
+    const stayLat = Number(primaryStay.lat);
+    const stayLng = Number(primaryStay.lng);
+    setFallbackStayPoint({
+      lat: stayLat,
+      lng: stayLng,
+      locationName: primaryStay.neighborhood || primaryStay.type || 'Primary stay',
+      mapsUrl: primaryStay.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${stayLat},${stayLng}`,
+    });
   }, [
     currentTrip,
     primaryStay?.id,
@@ -565,17 +487,13 @@ export default function SidebarMap() {
           <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-800)' }}>Map</h3>
         </div>
         <div className="map-empty-state" style={{ minHeight: 132 }}>
-          {isAutoGeocoding ? (
-            <Loader size={28} style={{ color: 'var(--primary-500)', marginBottom: 8, animation: 'spin 1s linear infinite' }} />
-          ) : (
-            <MapPin size={28} style={{ color: 'var(--primary-400)', marginBottom: 8 }} />
-          )}
+          <MapPin size={28} style={{ color: 'var(--primary-400)', marginBottom: 8 }} />
           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--navy-700)', margin: 0 }}>
-            {isAutoGeocoding ? 'Preparing map locations' : 'Map locations unavailable'}
+            Map locations unavailable
           </p>
           <p style={{ fontSize: 12, color: 'var(--navy-500)', margin: '6px 0 0', textAlign: 'center' }}>
             {hasPlanActivities
-              ? 'Syncing activity coordinates so all planned activities appear on map.'
+              ? 'Coordinates are missing for current activities.'
               : 'Add activities to your plan and map will appear here.'}
           </p>
         </div>
@@ -634,7 +552,7 @@ export default function SidebarMap() {
               {mappableEntries.map((entry) => {
                 const meta = getCategoryMeta(entry.activity.category);
                 const stepNum = String(stepNumbers.get(entry.activity.id) ?? '');
-                const markerImgUrl = buildPlacePhotoProxyUrl(
+                const markerImgUrl = entry.activity.cachedImageUrl || buildPlacePhotoProxyUrl(
                   [entry.activity.locationName, entry.activity.name].filter(Boolean).join(', ') || entry.activity.name,
                   120, 120, destination,
                 );
@@ -712,7 +630,7 @@ export default function SidebarMap() {
                   const meta = getCategoryMeta(activity.category);
                   const isActive = hoveredId === activity.id || focusedId === activity.id;
                   const stepNum = String(stepNumbers.get(activity.id) ?? '');
-                  const markerImgUrl = buildPlacePhotoProxyUrl(
+                  const markerImgUrl = activity.cachedImageUrl || buildPlacePhotoProxyUrl(
                     [activity.locationName, activity.name].filter(Boolean).join(', ') || activity.name,
                     120, 120, destination,
                   );
@@ -734,7 +652,7 @@ export default function SidebarMap() {
                         <div className="map-popup">
                           <div className="map-popup-image">
                             <img
-                              src={buildActivityImage(
+                              src={activity.cachedImageUrl || buildActivityImage(
                                 [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
                                 destination,
                                 activity.category || 'activity',
@@ -911,7 +829,7 @@ export default function SidebarMap() {
                             </div>
                           ) : (
                             <img
-                              src={buildActivityImage(
+                              src={activity.cachedImageUrl || buildActivityImage(
                                 [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
                                 destination,
                                 activity.category || 'activity',

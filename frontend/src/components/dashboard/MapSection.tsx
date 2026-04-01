@@ -1,9 +1,8 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { MapPin, Navigation, Maximize2, ExternalLink, LocateFixed, Loader, Map as MapIcon, CloudSun, X } from 'lucide-react';
+import { MapPin, Navigation, Maximize2, ExternalLink, Map as MapIcon, CloudSun, X } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
-import { geocodeAPI, tripAPI } from '@/services/api';
 import Chip from '@components/ui/Chip';
 import Modal from '@components/ui/Modal';
 import WeatherParticlesLayer from '@components/dashboard/WeatherParticlesLayer';
@@ -401,34 +400,16 @@ function WeatherLayerSelector({
 /* ── Main component ── */
 
 export default function MapSection() {
-  const { currentTrip, selectedDay, setSelectedDay, loadTrip } = useTripStore();
+  const { currentTrip, selectedDay, setSelectedDay } = useTripStore();
   const [activeCategory, setActiveCategory] = useState('All');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
-  const [isGeocoding, setIsGeocoding] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [airportPoints, setAirportPoints] = useState<StaticMapPoint[]>([]);
   const [stayPoint, setStayPoint] = useState<StaticMapPoint | null>(null);
   const [activityImageErrorById, setActivityImageErrorById] = useState<Record<string, boolean>>({});
   const [weatherLayer, setWeatherLayer] = useState<string | null>(null);
   const markerRefs = useRef<Record<string, L.Marker>>({});
-  const airportCacheRef = useRef<Record<string, Omit<StaticMapPoint, 'id'>>>({});
-  const stayCacheRef = useRef<Record<string, Omit<StaticMapPoint, 'id'>>>({});
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const autoGeocodeAttemptedRef = useRef<Record<string, boolean>>({});
-
-  const handleFindLocations = async () => {
-    if (!currentTrip) return;
-    setIsGeocoding(true);
-    try {
-      await tripAPI.geocodeTrip(currentTrip.id);
-      await loadTrip(currentTrip.id);
-    } catch (err) {
-      console.error('Geocoding failed:', err);
-    } finally {
-      setIsGeocoding(false);
-    }
-  };
 
   const allEntries = useMemo<MapActivityEntry[]>(() => {
     if (!currentTrip) return [];
@@ -436,43 +417,6 @@ export default function MapSection() {
       day.activities.map((a) => ({ activity: a, day: day.day, dayTitle: day.title }))
     );
   }, [currentTrip]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const autoGeocode = async () => {
-      if (!currentTrip) return;
-      if (allEntries.length === 0) return;
-
-      const hasMissingCoords = allEntries.some(
-        (entry) => entry.activity.lat == null || entry.activity.lng == null
-      );
-      if (!hasMissingCoords) return;
-
-      const tripKey = String(currentTrip.id);
-      if (autoGeocodeAttemptedRef.current[tripKey]) return;
-      autoGeocodeAttemptedRef.current[tripKey] = true;
-
-      setIsGeocoding(true);
-      try {
-        await tripAPI.geocodeTrip(currentTrip.id);
-        if (!cancelled) {
-          await loadTrip(currentTrip.id);
-        }
-      } catch {
-        // Keep manual geocode button available as fallback.
-      } finally {
-        if (!cancelled) {
-          setIsGeocoding(false);
-        }
-      }
-    };
-
-    autoGeocode();
-    return () => {
-      cancelled = true;
-    };
-  }, [currentTrip, allEntries, loadTrip]);
 
   const filteredEntries = useMemo(() => {
     let entries = allEntries;
@@ -490,16 +434,6 @@ export default function MapSection() {
     [filteredEntries]
   );
 
-  const primaryFlight = useMemo(() => {
-    if (!currentTrip) return null;
-    return (
-      currentTrip.flights.find((f) => f.id === currentTrip.selectedFlightId) ||
-      currentTrip.flights.find((f) => f.saved) ||
-      currentTrip.flights[0] ||
-      null
-    );
-  }, [currentTrip]);
-
   const primaryStay = useMemo<Stay | null>(() => {
     if (!currentTrip) return null;
     return (
@@ -511,131 +445,22 @@ export default function MapSection() {
   }, [currentTrip]);
 
   useEffect(() => {
-    let cancelled = false;
+    if (!primaryStay || primaryStay.lat == null || primaryStay.lng == null) {
+      setStayPoint(null);
+      return;
+    }
 
-    const resolveAirports = async () => {
-      if (!primaryFlight) {
-        setAirportPoints([]);
-        return;
-      }
-
-      const requests = [
-        {
-          key: `${primaryFlight.departure || ''} airport`,
-          type: 'airport-origin' as const,
-          label: `Departure airport: ${primaryFlight.departure || 'Origin'}`,
-        },
-        {
-          key: `${primaryFlight.arrival || ''} airport`,
-          type: 'airport-destination' as const,
-          label: `Arrival airport: ${primaryFlight.arrival || 'Destination'}`,
-        },
-      ].filter((r) => r.key.trim().length > 0);
-
-      const resolved: StaticMapPoint[] = [];
-
-      for (const request of requests) {
-        const cacheKey = request.key.toLowerCase();
-        let point = airportCacheRef.current[cacheKey];
-        if (!point) {
-          try {
-            const res = await geocodeAPI.searchPlace(request.key);
-            const geo = res?.result;
-            if (geo?.lat != null && geo?.lng != null) {
-              point = {
-                lat: Number(geo.lat),
-                lng: Number(geo.lng),
-                type: request.type,
-                label: request.label,
-                subtitle: geo.location_name || geo.address || request.key,
-                mapsUrl: geo.maps_url || `https://www.google.com/maps/search/?api=1&query=${geo.lat},${geo.lng}`,
-              };
-              airportCacheRef.current[cacheKey] = point;
-            }
-          } catch {
-            // Keep map functional even if one geocode call fails.
-          }
-        }
-        if (point) {
-          resolved.push({ ...point, id: `${request.type}-${cacheKey}` });
-        }
-      }
-
-      if (!cancelled) {
-        setAirportPoints(resolved);
-      }
-    };
-
-    resolveAirports();
-    return () => {
-      cancelled = true;
-    };
-  }, [primaryFlight?.id, primaryFlight?.departure, primaryFlight?.arrival]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const resolveStay = async () => {
-      if (!primaryStay) {
-        setStayPoint(null);
-        return;
-      }
-
-      if (primaryStay.lat != null && primaryStay.lng != null) {
-        const stayLat = Number(primaryStay.lat);
-        const stayLng = Number(primaryStay.lng);
-        setStayPoint({
-          id: `stay-${primaryStay.id}`,
-          lat: stayLat,
-          lng: stayLng,
-          type: 'stay',
-          label: primaryStay.name || 'Primary stay',
-          subtitle: primaryStay.neighborhood || primaryStay.type || '',
-          mapsUrl: `https://www.google.com/maps/search/?api=1&query=${stayLat},${stayLng}`,
-        });
-        return;
-      }
-
-      const destinationHint = currentTrip?.formData?.destinations?.[0] || '';
-      const query = [primaryStay.name, primaryStay.neighborhood, destinationHint]
-        .filter(Boolean)
-        .join(', ');
-      if (!query.trim()) {
-        setStayPoint(null);
-        return;
-      }
-
-      const cacheKey = query.toLowerCase();
-      let point = stayCacheRef.current[cacheKey];
-      if (!point) {
-        try {
-          const res = await geocodeAPI.searchPlace(query);
-          const geo = res?.result;
-          if (geo?.lat != null && geo?.lng != null) {
-            point = {
-              lat: Number(geo.lat),
-              lng: Number(geo.lng),
-              type: 'stay',
-              label: primaryStay.name || 'Primary stay',
-              subtitle: geo.location_name || geo.address || primaryStay.neighborhood || primaryStay.type || '',
-              mapsUrl: geo.maps_url || `https://www.google.com/maps/search/?api=1&query=${geo.lat},${geo.lng}`,
-            };
-            stayCacheRef.current[cacheKey] = point;
-          }
-        } catch {
-          // Keep map functional if stay geocoding fails.
-        }
-      }
-
-      if (!cancelled) {
-        setStayPoint(point ? { ...point, id: `stay-${primaryStay.id}` } : null);
-      }
-    };
-
-    resolveStay();
-    return () => {
-      cancelled = true;
-    };
+    const stayLat = Number(primaryStay.lat);
+    const stayLng = Number(primaryStay.lng);
+    setStayPoint({
+      id: `stay-${primaryStay.id}`,
+      lat: stayLat,
+      lng: stayLng,
+      type: 'stay',
+      label: primaryStay.name || 'Primary stay',
+      subtitle: primaryStay.neighborhood || primaryStay.type || '',
+      mapsUrl: `https://www.google.com/maps/search/?api=1&query=${stayLat},${stayLng}`,
+    });
   }, [
     primaryStay?.id,
     primaryStay?.lat,
@@ -644,7 +469,6 @@ export default function MapSection() {
     primaryStay?.neighborhood,
     primaryStay?.type,
     primaryStay?.bookingUrl,
-    currentTrip?.formData?.destinations,
   ]);
 
   // Map activity.id → 1-based step number within its day (stable regardless of filters)
@@ -664,10 +488,10 @@ export default function MapSection() {
     : null;
 
   const staticPoints = useMemo(() => {
-    const points = [...airportPoints];
+    const points: StaticMapPoint[] = [];
     if (stayPoint) points.push(stayPoint);
     return points;
-  }, [airportPoints, stayPoint]);
+  }, [stayPoint]);
 
   const allMapPoints = useMemo(() => {
     const activityPoints = mappableEntries.map((entry) => ({
@@ -842,7 +666,7 @@ export default function MapSection() {
                   const meta = getCategoryMeta(activity.category);
                   const isActive = hoveredId === activity.id || focusedId === activity.id;
                   const stepNum = String(stepNumbers.get(activity.id) ?? '');
-                  const markerImgUrl = buildPlacePhotoProxyUrl(
+                  const markerImgUrl = activity.cachedImageUrl || buildPlacePhotoProxyUrl(
                     [activity.locationName, activity.name].filter(Boolean).join(', ') || activity.name,
                     120, 120, destination,
                   );
@@ -867,7 +691,7 @@ export default function MapSection() {
                         <div className="map-popup">
                           <div className="map-popup-image">
                             <img
-                              src={buildActivityImage(
+                              src={activity.cachedImageUrl || buildActivityImage(
                                 [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
                                 destination,
                                 activity.category || 'activity',
@@ -990,22 +814,9 @@ export default function MapSection() {
               </p>
               <p style={{ fontSize: 13, color: 'var(--navy-400)', marginTop: 4, marginBottom: 16 }}>
                 {filteredEntries.length > 0
-                  ? 'Coordinates for these activities haven\'t been geocoded yet'
+                  ? 'Coordinates for these activities are not available yet'
                   : 'Try selecting a different day or category'}
               </p>
-              {filteredEntries.length > 0 && (
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={handleFindLocations}
-                  disabled={isGeocoding}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                >
-                  {isGeocoding
-                    ? <><Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> Finding locations…</>
-                    : <><LocateFixed size={14} /> Find locations</>
-                  }
-                </button>
-              )}
             </div>
           )}
 
@@ -1050,7 +861,7 @@ export default function MapSection() {
                       </div>
                     ) : (
                       <img
-                        src={buildActivityImage(
+                        src={activity.cachedImageUrl || buildActivityImage(
                           [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
                           destination,
                           activity.category || 'activity',
@@ -1151,7 +962,7 @@ export default function MapSection() {
                   const meta = getCategoryMeta(activity.category);
                   const isActive = hoveredId === activity.id || focusedId === activity.id;
                   const stepNum = String(stepNumbers.get(activity.id) ?? '');
-                  const markerImgUrl = buildPlacePhotoProxyUrl(
+                  const markerImgUrl = activity.cachedImageUrl || buildPlacePhotoProxyUrl(
                     [activity.locationName, activity.name].filter(Boolean).join(', ') || activity.name,
                     120, 120, destination,
                   );
@@ -1173,7 +984,7 @@ export default function MapSection() {
                         <div className="map-popup">
                           <div className="map-popup-image">
                             <img
-                              src={buildActivityImage(
+                              src={activity.cachedImageUrl || buildActivityImage(
                                 [activity.locationName, activity.address, activity.name].filter(Boolean).join(', ') || activity.name,
                                 destination,
                                 activity.category || 'activity',

@@ -100,6 +100,7 @@ export interface Activity {
   lng?: number | null;
   locationName?: string;
   address?: string;
+  cachedImageUrl?: string;
 }
 
 export interface ActivityLink {

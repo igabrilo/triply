@@ -231,7 +231,7 @@ export default function PlanSection() {
                             </div>
                           ) : (
                             <img
-                              src={buildActivityImage(
+                              src={activity.cachedImageUrl || buildActivityImage(
                                 imagePrompt,
                                 destination,
                                 activity.category || 'activity',

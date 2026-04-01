@@ -122,6 +122,7 @@ function isLegacyAutoOverviewImage(url: string): boolean {
   const value = (url || '').trim().toLowerCase();
   if (!value) return false;
   if (value.includes('image.pollinations.ai/prompt/')) return true;
+  if (value.includes('/api/media/overview-hero')) return true;
   if (!value.includes('/api/media/place-photo')) return false;
 
   const legacyTokens = [
@@ -317,9 +318,9 @@ export default function OverviewSection() {
 
   const budgetSummary = currentTrip.budget?.summary;
   const budgetCurrency = budgetSummary?.currency || currentTrip.budget?.currency || 'EUR';
-  const destinationHeroImage = `/api/media/overview-hero?destination=${encodeURIComponent(destination)}&w=3200&h=1800`;
-  const destinationPlaceImage = `/api/media/place-photo?q=${encodeURIComponent(`${destination} famous landmark`)}&w=3200&h=1800&norand=1`;
-  const fallbackPlaceImage = `/api/media/place-photo?q=${encodeURIComponent(destination)}&w=3200&h=1800&norand=1`;
+  const destinationHeroImage = buildFallbackImage(`overview-hero-${destination}`, 3200, 1800);
+  const destinationPlaceImage = buildFallbackImage(`overview-place-${destination}`, 3200, 1800);
+  const fallbackPlaceImage = buildFallbackImage(`overview-destination-${destination}`, 3200, 1800);
   const fallbackStaticImage = buildFallbackImage(`overview-${destination}`, 1600, 900);
   const storedCoverUrl = (overview?.destinationImageUrl || '').trim();
   const cachedHeroUrl = (overview?.cachedImageUrl || '').trim();

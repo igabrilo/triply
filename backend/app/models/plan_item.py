@@ -27,6 +27,7 @@ class PlanItem(db.Model):
 
     external_url = db.Column(db.Text, nullable=True)
     maps_url = db.Column(db.Text, nullable=True)
+    cached_image_url = db.Column(db.Text, nullable=True)
 
     status = db.Column(db.Text, default='suggested')            # suggested | confirmed | skipped
     saved = db.Column(db.Boolean, default=False)
@@ -58,6 +59,7 @@ class PlanItem(db.Model):
             'lng': self.lng,
             'externalUrl': self.external_url,
             'mapsUrl': self.maps_url,
+            'cachedImageUrl': self.cached_image_url,
             'status': self.status,
             'saved': self.saved,
             'sortOrder': self.sort_order,

@@ -43,11 +43,6 @@ export const geocodeAPI = {
     const { data } = await apiClient.get('/geocode/reverse', { params: { lat, lng } });
     return data;
   },
-
-  async searchPlace(query: string) {
-    const { data } = await apiClient.get('/geocode/search', { params: { q: query } });
-    return data;
-  },
 };
 
 // ------------------------------------------------------------------
@@ -121,11 +116,6 @@ export const tripAPI = {
 
   async deleteTrip(tripId: string) {
     const { data } = await apiClient.delete(`/trips/${tripId}`);
-    return data;
-  },
-
-  async geocodeTrip(tripId: string) {
-    const { data } = await apiClient.post(`/trips/${tripId}/geocode`);
     return data;
   },
 
