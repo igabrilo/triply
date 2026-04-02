@@ -136,6 +136,31 @@ function isLegacyAutoOverviewImage(url: string): boolean {
   return legacyTokens.some((token) => value.includes(token));
 }
 
+function normalizeStoredImageUrl(url: string): string {
+  const raw = (url || '').trim();
+  if (!raw) return '';
+
+  const lowered = raw.toLowerCase();
+  if (lowered === 'null' || lowered === 'undefined') return '';
+  if (raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('data:') || raw.startsWith('blob:')) {
+    return raw;
+  }
+
+  const supabaseBase = String(import.meta.env.VITE_SUPABASE_URL || '').trim().replace(/\/+$/, '');
+
+  if (raw.startsWith('/storage/v1/object/public/')) {
+    return supabaseBase ? `${supabaseBase}${raw}` : raw;
+  }
+  if (raw.startsWith('storage/v1/object/public/')) {
+    return supabaseBase ? `${supabaseBase}/${raw}` : `/${raw}`;
+  }
+  if (raw.startsWith('trip-images/')) {
+    return supabaseBase ? `${supabaseBase}/storage/v1/object/public/${raw}` : raw;
+  }
+
+  return supabaseBase ? `${supabaseBase}/storage/v1/object/public/trip-images/${raw}` : raw;
+}
+
 function buildPersonalizedExpertAdvice(params: {
   destination: string;
   travelers: number;
@@ -240,7 +265,7 @@ export default function OverviewSection() {
     setFocusFlightId,
     setFocusStayId,
   } = useTripStore();
-  const [coverImageSrc, setCoverImageSrc] = useState('');
+  const [coverImageIndex, setCoverImageIndex] = useState(0);
   const [flightLogoBroken, setFlightLogoBroken] = useState(false);
   const [stayThumbBroken, setStayThumbBroken] = useState(false);
   const [weatherThumbBroken, setWeatherThumbBroken] = useState(false);
@@ -322,10 +347,17 @@ export default function OverviewSection() {
   const destinationPlaceImage = buildFallbackImage(`overview-place-${destination}`, 3200, 1800);
   const fallbackPlaceImage = buildFallbackImage(`overview-destination-${destination}`, 3200, 1800);
   const fallbackStaticImage = buildFallbackImage(`overview-${destination}`, 1600, 900);
-  const storedCoverUrl = (overview?.destinationImageUrl || '').trim();
-  const cachedHeroUrl = (overview?.cachedImageUrl || '').trim();
+  const storedCoverUrl = normalizeStoredImageUrl(overview?.destinationImageUrl || '');
+  const cachedHeroUrl = normalizeStoredImageUrl(overview?.cachedImageUrl || '');
   const isLegacyAiCover = isLegacyAutoOverviewImage(storedCoverUrl);
   const coverImageUrl = cachedHeroUrl || (storedCoverUrl && !isLegacyAiCover ? storedCoverUrl : destinationHeroImage);
+  const coverCandidates = Array.from(new Set([
+    coverImageUrl,
+    destinationPlaceImage,
+    fallbackPlaceImage,
+    fallbackStaticImage,
+  ].map((value) => (value || '').trim()).filter(Boolean)));
+  const coverImageSrc = coverCandidates[Math.min(coverImageIndex, Math.max(0, coverCandidates.length - 1))] || fallbackStaticImage;
   const firstWeather = currentTrip.weather[0] || null;
   const stayThumbUrl = primaryStay?.cachedImageUrl || primaryStay?.imageUrl || buildPlaceImage(
     `${primaryStay?.name || destination} ${primaryStay?.neighborhood || ''}`.trim(),
@@ -368,8 +400,8 @@ export default function OverviewSection() {
   });
 
   useEffect(() => {
-    setCoverImageSrc(coverImageUrl);
-  }, [coverImageUrl]);
+    setCoverImageIndex(0);
+  }, [tripId, coverImageUrl]);
 
   useEffect(() => {
     setFlightLogoBroken(false);
@@ -466,18 +498,11 @@ export default function OverviewSection() {
               alt={`${destination} destination`}
               loading="lazy"
               style={{ width: '100%', height: 260, objectFit: 'cover', display: 'block' }}
-              onError={(e) => {
-                const img = e.currentTarget;
-                const step = img.dataset.fallbackStep || '0';
-                if (step === '0') {
-                  img.dataset.fallbackStep = '1';
-                  setCoverImageSrc(destinationPlaceImage || fallbackPlaceImage);
-                  return;
-                }
-                if (step === '1') {
-                  img.dataset.fallbackStep = '2';
-                  setCoverImageSrc(fallbackStaticImage);
-                }
+              onError={() => {
+                setCoverImageIndex((prev) => {
+                  const next = prev + 1;
+                  return next >= coverCandidates.length ? prev : next;
+                });
               }}
             />
             <div
