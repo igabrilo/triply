@@ -49,9 +49,9 @@ GET  /api/trips/:id/stream (SSE) -> streams section-by-section AI generation
 - `ai_service.py`: typed OpenAI generation/chat calls (Pydantic schemas)
 - `trip_service.py`: core persistence and section replacement/merge logic
 - `chat_service.py`: scoped edit workflow, diff persistence, free edit limit
-- `geocoding_service.py`: Google Places + Nominatim fallbacks, enrichment helpers
+- `geocoding_service.py`: Google Places API v1 (primary) + legacy + Nominatim fallbacks, image fetching with Wikimedia/LoremFlickr fallback chain
 - `pdf_service.py`: overview PDF export
-- `image_storage_service.py`: optional Supabase Storage caching (`trip-images` bucket)
+- `image_storage_service.py`: Supabase Storage caching (`trip-images` bucket, WebP compression at 640px for items, 1600px for hero)
 
 ### Auth model
 
@@ -80,6 +80,10 @@ Current phases:
 6. budget
 7. tips
 8. overview
+
+The hero/banner image is fetched in a background thread from the start of generation (concurrently with Phase 1). An early `section_ready: overview` event with just the cached image URL is emitted after Phase 1 so the banner appears before generation completes.
+
+Images for plan items, activities, and stays are fetched during enrichment (not at page-load time) using the Google Places API v1, cached to Supabase Storage as WebP, and stored as `cached_image_url` on the DB row or JSON payload. Transport category items use destination-aware queries (e.g. airport name, hotel area) to avoid returning corporate logos.
 
 Guardrails and retries are applied for key sections (activities, weather, budget, overview), with usage events persisted for analytics.
 
@@ -192,7 +196,7 @@ Common optional/operational vars:
 
 - `MIGRATION_DATABASE_URL`: dedicated DB URL for Alembic migrations
 - `SUPABASE_SERVICE_ROLE_KEY`: enables image caching to Supabase Storage
-- `GOOGLE_MAPS_API_KEY`: enables richer geocoding/place-photo behavior
+- `GOOGLE_MAPS_API_KEY`: enables Google Places geocoding and photo fetching (primary image source; falls back to Wikimedia/LoremFlickr without it)
 - `OPENAI_MODEL_GENERATION` (default `gpt-5.2`)
 - `OPENAI_MODEL_CHAT` (default `gpt-5-mini`)
 - `CORS_ORIGINS` (default `http://localhost:3000`)
