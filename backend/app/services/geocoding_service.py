@@ -454,38 +454,40 @@ def geocode_place(query: str) -> dict:
     }
 
     if api_key and query:
-        place = _google_textsearch_first_result(query, api_key)
-        if place:
-            loc = place.get('geometry', {}).get('location', {})
-            result['lat'] = loc.get('lat')
-            result['lng'] = loc.get('lng')
-            result['address'] = place.get('formatted_address')
-            result['location_name'] = place.get('name')
-            result['place_id'] = place.get('place_id')
-            photos = place.get('photos') or []
-            if photos:
-                result['photo_reference'] = photos[0].get('photo_reference')
-            result['photo_query'] = place.get('name') or query
-            result['maps_url'] = (
-                f"https://www.google.com/maps/place/?q=place_id:{place.get('place_id', '')}"
-                if place.get('place_id')
-                else _google_maps_search_url(query)
-            )
+        # New Places API v1 first (Google-preferred, returns photo_name for higher-quality photos)
+        place_new = _google_textsearch_first_result_new(query, api_key)
+        if place_new:
+            loc = place_new.get('location', {})
+            display_name = (place_new.get('displayName') or {}).get('text')
+            result['lat'] = loc.get('latitude')
+            result['lng'] = loc.get('longitude')
+            result['address'] = place_new.get('formattedAddress')
+            result['location_name'] = display_name
+            result['place_id'] = place_new.get('id')
+            photos_new = place_new.get('photos') or []
+            if photos_new:
+                result['photo_name'] = photos_new[0].get('name')
+            result['photo_query'] = display_name or query
+            result['maps_url'] = place_new.get('googleMapsUri') or _google_maps_search_url(query)
         else:
-            place_new = _google_textsearch_first_result_new(query, api_key)
-            if place_new:
-                loc = place_new.get('location', {})
-                display_name = (place_new.get('displayName') or {}).get('text')
-                result['lat'] = loc.get('latitude')
-                result['lng'] = loc.get('longitude')
-                result['address'] = place_new.get('formattedAddress')
-                result['location_name'] = display_name
-                result['place_id'] = place_new.get('id')
-                photos_new = place_new.get('photos') or []
-                if photos_new:
-                    result['photo_name'] = photos_new[0].get('name')
-                result['photo_query'] = display_name or query
-                result['maps_url'] = place_new.get('googleMapsUri') or _google_maps_search_url(query)
+            # Legacy Places API as fallback
+            place = _google_textsearch_first_result(query, api_key)
+            if place:
+                loc = place.get('geometry', {}).get('location', {})
+                result['lat'] = loc.get('lat')
+                result['lng'] = loc.get('lng')
+                result['address'] = place.get('formatted_address')
+                result['location_name'] = place.get('name')
+                result['place_id'] = place.get('place_id')
+                photos = place.get('photos') or []
+                if photos:
+                    result['photo_reference'] = photos[0].get('photo_reference')
+                result['photo_query'] = place.get('name') or query
+                result['maps_url'] = (
+                    f"https://www.google.com/maps/place/?q=place_id:{place.get('place_id', '')}"
+                    if place.get('place_id')
+                    else _google_maps_search_url(query)
+                )
 
     # Fallback: Nominatim (OpenStreetMap) – free, max 1 req/sec
     if result['lat'] is None and query:
@@ -960,23 +962,24 @@ def fetch_place_photo(
                 return photo_from_ref
 
         if place_id:
+            # Try new API first using place_id as a direct resource name
+            place_new_by_id = _google_textsearch_first_result_new(place_id, api_key)
+            if place_new_by_id:
+                photos_by_id = place_new_by_id.get('photos') or []
+                photo_name_by_id = photos_by_id[0].get('name') if photos_by_id else None
+                if photo_name_by_id:
+                    photo_from_new_id = _fetch_google_place_photo_new(photo_name_by_id, api_key, width, height)
+                    if photo_from_new_id:
+                        return photo_from_new_id
+            # Legacy fallback via Place Details
             resolved_ref = _google_place_details_photo_reference(place_id, api_key)
             if resolved_ref:
                 photo_from_place_id = _fetch_google_place_photo_legacy(resolved_ref, api_key, width, height)
                 if photo_from_place_id:
                     return photo_from_place_id
 
-        # Legacy + New Places flow by progressively cleaned query candidates
+        # New Places API v1 first, legacy as fallback, per query candidate
         for candidate in query_candidates:
-            place = _google_textsearch_first_result(candidate, api_key)
-            if place:
-                photos = place.get('photos') or []
-                photo_ref = photos[0].get('photo_reference') if photos else None
-                if photo_ref:
-                    from_query_ref = _fetch_google_place_photo_legacy(photo_ref, api_key, width, height)
-                    if from_query_ref:
-                        return from_query_ref
-
             place_new = _google_textsearch_first_result_new(candidate, api_key)
             if place_new:
                 photos_new = place_new.get('photos') or []
@@ -985,6 +988,15 @@ def fetch_place_photo(
                     from_query_name = _fetch_google_place_photo_new(photo_name_candidate, api_key, width, height)
                     if from_query_name:
                         return from_query_name
+
+            place = _google_textsearch_first_result(candidate, api_key)
+            if place:
+                photos = place.get('photos') or []
+                photo_ref = photos[0].get('photo_reference') if photos else None
+                if photo_ref:
+                    from_query_ref = _fetch_google_place_photo_legacy(photo_ref, api_key, width, height)
+                    if from_query_ref:
+                        return from_query_ref
 
     if query_candidates:
         for candidate in query_candidates:
