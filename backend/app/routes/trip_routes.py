@@ -252,6 +252,39 @@ def stream_trip_generation(trip_id):
 
         run = TripService.create_generation_run(trip, form_data)
 
+        # Resolve destination early for hero image fetch
+        primary_destination = (
+            (form_data.get('destinations') or [''])[0]
+            if isinstance(form_data.get('destinations'), list)
+            else form_data.get('destinations')
+        ) or trip.destination or ''
+
+        # Start hero image fetch in background so it's ready before Phase 8
+        import threading
+        from flask import current_app as _current_app
+        _hero_result: list = [None]
+        _app = _current_app._get_current_object()
+
+        def _fetch_hero_bg():
+            try:
+                from app.services.geocoding_service import fetch_destination_hero_photo
+                from app.services.image_storage_service import upload_trip_image, MAX_WIDTH_HERO
+                with _app.app_context():
+                    hero_photo = fetch_destination_hero_photo(str(primary_destination))
+                    if hero_photo:
+                        image_bytes, content_type = hero_photo
+                        url = upload_trip_image(
+                            str(trip.id), 'overview', 'hero', image_bytes, content_type,
+                            max_width=MAX_WIDTH_HERO,
+                        )
+                        if url:
+                            _hero_result[0] = url.rstrip('?')
+            except Exception:
+                logger.exception("Background hero image fetch failed for trip %s", trip.id)
+
+        _hero_thread = threading.Thread(target=_fetch_hero_bg, daemon=True)
+        _hero_thread.start()
+
         try:
             # Phase 1: Plan
             yield _sse('status', {'phase': 'generating_plan'})
@@ -263,6 +296,13 @@ def stream_trip_generation(trip_id):
                 'section': 'plan',
                 'data': [d.to_dict() for d in trip.days],
             })
+
+            # Emit hero image as soon as it's ready (non-blocking check then short wait)
+            _hero_thread.join(timeout=5)
+            if _hero_result[0]:
+                _early_overview = {'cached_image_url': _hero_result[0]}
+                TripService.persist_generated_section(trip, 'overview', _early_overview)
+                yield _sse('section_ready', {'section': 'overview', 'data': _early_overview})
 
             # Phase 2: Stays
             yield _sse('status', {'phase': 'generating_stays'})
@@ -406,23 +446,11 @@ def stream_trip_generation(trip_id):
                 track_guardrail_retry('overview', overview_score, retry_score)
                 if retry_score >= overview_score:
                     overview_payload = retry_payload
-            primary_destination = (
-                (form_data.get('destinations') or [''])[0]
-                if isinstance(form_data.get('destinations'), list)
-                else form_data.get('destinations')
-            ) or trip.destination or ''
             overview_payload['destination_image_url'] = _overview_place_photo_url(str(primary_destination))
-            try:
-                from app.services.geocoding_service import _resolve_and_cache_image
-                hero_cached = _resolve_and_cache_image(
-                    str(trip.id), 'overview', 'hero',
-                    f"{primary_destination} famous landmark",
-                    str(primary_destination),
-                )
-                if hero_cached:
-                    overview_payload['cached_image_url'] = hero_cached
-            except Exception:
-                pass
+            # Use hero image from background thread (wait for it if still running)
+            _hero_thread.join(timeout=30)
+            if _hero_result[0]:
+                overview_payload['cached_image_url'] = _hero_result[0]
             TripService.persist_generated_section(trip, 'overview', overview_payload)
             yield _sse('section_ready', {
                 'section': 'overview',

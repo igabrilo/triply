@@ -477,7 +477,7 @@ class TripService:
                 from datetime import timedelta
                 day_dict['date'] = (trip.start_date + timedelta(days=day_dict['dayIndex'])).isoformat()
 
-        enrich_plan_items(days_raw)
+        enrich_plan_items(days_raw, destination_hint=str(trip.destination or ''), trip_id=str(trip.id))
         _persist_days(trip, days_raw)
         db.session.commit()
 
@@ -1099,7 +1099,7 @@ class TripService:
         """Replace the entire plan (days + items) from AI edit output."""
         from app.services.geocoding_service import enrich_plan_items
 
-        days_data = enrich_plan_items(days_data)
+        days_data = enrich_plan_items(days_data, destination_hint=str(trip.destination or ''), trip_id=str(trip.id))
         _replace_days(trip, days_data)
         db.session.commit()
 
@@ -1197,7 +1197,7 @@ def _persist_days(trip, days_list):
         )
         db.session.add(day)
         for idx, item_data in enumerate(day_data.get('items', [])):
-            cached_url = _resolve_plan_item_cached_image(trip, day_data, item_data, idx)
+            cached_url = (item_data.get('cached_image_url') or '').strip() or None
             db.session.add(PlanItem(
                 trip_day=day,
                 title=item_data.get('title', ''),

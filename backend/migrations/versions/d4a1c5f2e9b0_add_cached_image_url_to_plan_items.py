@@ -17,7 +17,13 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column('plan_items', sa.Column('cached_image_url', sa.Text(), nullable=True))
+    conn = op.get_bind()
+    result = conn.execute(sa.text(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name='plan_items' AND column_name='cached_image_url'"
+    ))
+    if not result.fetchone():
+        op.add_column('plan_items', sa.Column('cached_image_url', sa.Text(), nullable=True))
 
 
 def downgrade():

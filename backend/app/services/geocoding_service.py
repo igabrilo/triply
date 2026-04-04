@@ -211,6 +211,15 @@ def _fetch_wikimedia_place_photo(query: str, max_width: int = 640, destination: 
                 headers=headers,
                 timeout=8,
             )
+            if search_resp.status_code == 429:
+                time.sleep(1.5)
+                search_resp = requests.get(
+                    'https://en.wikipedia.org/w/api.php',
+                    params={'action': 'query', 'list': 'search', 'srsearch': candidate, 'format': 'json', 'srlimit': 1, 'utf8': 1},
+                    headers=headers, timeout=8,
+                )
+            if search_resp.status_code != 200:
+                continue
             search_json = search_resp.json()
             hits = (search_json.get('query') or {}).get('search') or []
             if not hits:
@@ -232,6 +241,15 @@ def _fetch_wikimedia_place_photo(query: str, max_width: int = 640, destination: 
                 headers=headers,
                 timeout=8,
             )
+            if thumb_resp.status_code == 429:
+                time.sleep(1.5)
+                thumb_resp = requests.get(
+                    'https://en.wikipedia.org/w/api.php',
+                    params={'action': 'query', 'prop': 'pageimages', 'titles': title, 'pithumbsize': thumb_size, 'format': 'json', 'utf8': 1},
+                    headers=headers, timeout=8,
+                )
+            if thumb_resp.status_code != 200:
+                continue
             thumb_json = thumb_resp.json()
             pages = ((thumb_json.get('query') or {}).get('pages') or {}).values()
             thumb_url = None
@@ -277,6 +295,15 @@ def _fetch_wikimedia_commons_photo(query: str, max_width: int = 640, destination
             headers=headers,
             timeout=8,
         )
+        if search_resp.status_code == 429:
+            time.sleep(1.5)
+            search_resp = requests.get(
+                'https://commons.wikimedia.org/w/api.php',
+                params={'action': 'query', 'list': 'search', 'srsearch': short_query, 'srnamespace': 6, 'srlimit': 6, 'format': 'json', 'utf8': 1},
+                headers=headers, timeout=8,
+            )
+        if search_resp.status_code != 200:
+            return None
         search_json = search_resp.json()
         hits = (search_json.get('query') or {}).get('search') or []
         if not hits:
@@ -300,6 +327,15 @@ def _fetch_wikimedia_commons_photo(query: str, max_width: int = 640, destination
                 headers=headers,
                 timeout=8,
             )
+            if info_resp.status_code == 429:
+                time.sleep(1.5)
+                info_resp = requests.get(
+                    'https://commons.wikimedia.org/w/api.php',
+                    params={'action': 'query', 'prop': 'imageinfo', 'iiprop': 'url', 'iiurlwidth': thumb_size, 'titles': title, 'format': 'json', 'utf8': 1},
+                    headers=headers, timeout=8,
+                )
+            if info_resp.status_code != 200:
+                continue
             info_json = info_resp.json()
             pages = ((info_json.get('query') or {}).get('pages') or {}).values()
             for page in pages:
@@ -567,18 +603,55 @@ def _build_attraction_link(query: str, category: str | None) -> tuple[str, str] 
     return (f"https://www.google.com/search?q={safe}+tickets", 'Tickets')
 
 
-def enrich_plan_items(days_data: list[dict]) -> list[dict]:
-    """Enrich plan items with geocoded lat/lng, maps_url, and attraction links.
+def _transport_image_query(place_query: str, title: str, destination: str) -> str:
+    """Build an image search query for transport items that yields a real photo.
+
+    For flights/airports → query the airport name so we get a terminal photo.
+    For transfers/hotels → query the destination area so we get a scenic arrival shot.
+    """
+    combined = f"{place_query} {title}".lower()
+    dest = (destination or '').strip()
+
+    # Flight / airport items
+    flight_keywords = ('fly ', 'flight', 'airport', 'airline', 'depart', 'arrive', ' nan', ' cdg', ' lhr', ' jfk', '→', '->')
+    if any(kw in combined for kw in flight_keywords):
+        # Prefer the airport name from place_query if it looks like one
+        if 'airport' in place_query.lower():
+            return place_query
+        if dest:
+            return f"{dest} international airport"
+        return place_query or title
+
+    # Transfer / hotel / check-in items
+    transfer_keywords = ('transfer', 'check-in', 'check in', 'hotel', 'resort', 'accommodation')
+    if any(kw in combined for kw in transfer_keywords):
+        if dest:
+            return f"{dest} hotel resort"
+        return place_query or title
+
+    # Generic transport (bus, train, ferry, etc.)
+    if dest:
+        return f"{dest} travel"
+    return place_query or title
+
+
+def enrich_plan_items(days_data: list[dict], destination_hint: str = '', trip_id: Optional[str] = None) -> list[dict]:
+    """Enrich plan items with geocoded lat/lng, maps_url, photo metadata, and cached images.
 
     Accepts the raw list of day dicts (with items) from the AI output
-    and returns the same structure with location fields populated.
+    and returns the same structure with location and image fields populated.
     """
+    dest = (destination_hint or '').strip()
     for day in days_data:
-        for item in day.get('items', []):
+        day_idx = day.get('dayIndex', day.get('day_index', 0))
+        for item_idx, item in enumerate(day.get('items', [])):
             query = item.get('place_query') or item.get('title', '')
             if not query:
                 continue
-            geo = geocode_place(query)
+            search_query = query
+            if dest and dest.lower() not in query.lower():
+                search_query = f"{query}, {dest}"
+            geo = geocode_place(search_query)
             if geo['lat'] is not None:
                 item['lat'] = geo['lat']
                 item['lng'] = geo['lng']
@@ -587,6 +660,32 @@ def enrich_plan_items(days_data: list[dict]) -> list[dict]:
             if geo['location_name']:
                 item['location_name'] = geo['location_name']
             item['maps_url'] = geo['maps_url']
+
+            # Store photo metadata for image fetching
+            if geo.get('place_id'):
+                item['place_id'] = geo['place_id']
+            if geo.get('photo_reference'):
+                item['photo_reference'] = geo['photo_reference']
+            if geo.get('photo_name'):
+                item['photo_name'] = geo['photo_name']
+            if geo.get('photo_query'):
+                item['image_query'] = geo['photo_query']
+
+            # Cache image during enrichment
+            item_id = item.get('id') or f"day_{day_idx}_item_{item_idx}"
+            item['id'] = item_id
+            category = (item.get('category') or '').lower().strip()
+            if trip_id:
+                image_query = _transport_image_query(query, item.get('title', ''), dest) if category == 'transport' else query
+                cached_url = _resolve_and_cache_image(
+                    trip_id, 'activity', str(item_id), image_query, dest,
+                    place_id=geo.get('place_id'),
+                    photo_reference=geo.get('photo_reference'),
+                    photo_name=geo.get('photo_name'),
+                    allow_random_fallback=True,
+                )
+                if cached_url:
+                    item['cached_image_url'] = cached_url
 
             # Generate a tickets / reservation search link when the AI didn't supply one
             if not item.get('external_url'):
@@ -606,6 +705,7 @@ def _resolve_and_cache_image(
     place_id: Optional[str] = None,
     photo_reference: Optional[str] = None,
     photo_name: Optional[str] = None,
+    allow_random_fallback: bool = False,
 ) -> Optional[str]:
     """Fetch a place photo and permanently cache it to Supabase Storage.
 
@@ -619,7 +719,7 @@ def _resolve_and_cache_image(
         place_id=place_id,
         photo_reference=photo_reference,
         photo_name=photo_name,
-        allow_random_fallback=False,
+        allow_random_fallback=allow_random_fallback,
         destination_hint=destination_hint or None,
     )
     if not photo:
@@ -669,6 +769,7 @@ def enrich_activities(activities_data: list[dict], destination_hint: str = '', t
                 place_id=geo.get('place_id'),
                 photo_reference=geo.get('photo_reference'),
                 photo_name=geo.get('photo_name'),
+                allow_random_fallback=True,
             )
             if cached_url:
                 activity['cached_image_url'] = cached_url
@@ -708,6 +809,7 @@ def enrich_stays(stays_data: list[dict], trip_id: Optional[str] = None, destinat
                 place_id=geo.get('place_id'),
                 photo_reference=geo.get('photo_reference'),
                 photo_name=geo.get('photo_name'),
+                allow_random_fallback=True,
             )
             if cached_url:
                 stay['cached_image_url'] = cached_url
@@ -814,12 +916,12 @@ def fetch_destination_hero_photo(
         if photo:
             return photo
 
-    # Last resort – still no LoremFlickr for hero images; it returns generic photos.
+    # Last resort – use LoremFlickr for a relevant travel photo.
     return fetch_place_photo(
         queries[0],
         max_width=max_width,
         max_height=max_height,
-        allow_random_fallback=False,
+        allow_random_fallback=True,
     )
 
 

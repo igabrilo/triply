@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 BUCKET_NAME = 'trip-images'
 MAX_WIDTH = 640
+MAX_WIDTH_HERO = 1600
 WEBP_QUALITY = 72
 
 
@@ -35,7 +36,7 @@ def _get_supabase_client():
         return None
 
 
-def _compress_to_webp(image_bytes: bytes) -> Optional[bytes]:
+def _compress_to_webp(image_bytes: bytes, max_width: int = MAX_WIDTH) -> Optional[bytes]:
     try:
         from PIL import Image
 
@@ -44,9 +45,9 @@ def _compress_to_webp(image_bytes: bytes) -> Optional[bytes]:
             img = img.convert('RGB')
 
         w, h = img.size
-        if w > MAX_WIDTH:
-            ratio = MAX_WIDTH / w
-            img = img.resize((MAX_WIDTH, int(h * ratio)), Image.LANCZOS)
+        if w > max_width:
+            ratio = max_width / w
+            img = img.resize((max_width, int(h * ratio)), Image.LANCZOS)
 
         buf = io.BytesIO()
         img.save(buf, format='WEBP', quality=WEBP_QUALITY, method=4)
@@ -62,6 +63,7 @@ def upload_trip_image(
     item_id: str,
     image_bytes: bytes,
     content_type: str = 'image/jpeg',
+    max_width: int = MAX_WIDTH,
 ) -> Optional[str]:
     """Compress image to WebP and upload to Supabase Storage.
 
@@ -72,7 +74,7 @@ def upload_trip_image(
     if not client:
         return None
 
-    compressed = _compress_to_webp(image_bytes)
+    compressed = _compress_to_webp(image_bytes, max_width=max_width)
     if not compressed:
         return None
 
@@ -84,7 +86,8 @@ def upload_trip_image(
             file_options={'content-type': 'image/webp', 'upsert': 'true'},
         )
         url = client.storage.from_(BUCKET_NAME).get_public_url(path)
-        return url
+        # Supabase SDK appends a bare '?' — strip it
+        return url.rstrip('?') if url else url
     except Exception as exc:
         logger.warning("Supabase Storage upload failed for %s: %s", path, exc)
         return None
