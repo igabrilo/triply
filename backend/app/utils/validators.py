@@ -25,6 +25,13 @@ def validate_password(password: str) -> tuple[bool, Optional[str]]:
     
     return True, None
 
-def sanitize_string(text: str) -> str:
-    """Sanitize string input"""
-    return text.strip()
+def sanitize_string(text: str, max_length: int = 500) -> str:
+    """Sanitize string input: strip whitespace, remove control chars, enforce length."""
+    if not isinstance(text, str):
+        raise ValueError("Input must be a string")
+    text = text.strip()
+    # Remove ASCII control characters (except newline/tab)
+    text = re.sub(r'[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f]', '', text)
+    if len(text) > max_length:
+        raise ValueError(f"Input exceeds maximum length of {max_length} characters")
+    return text

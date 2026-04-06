@@ -11,7 +11,14 @@ services:
     volumes:
       - ./backend:/app
     command: >
-      sh -c "flask db upgrade && python run.py"
+      sh -c "pip install --quiet -r requirements.txt && (flask db upgrade || echo 'DB migration warning - continuing') && python run.py"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: on-failure
 
   frontend:
     build: ./frontend
@@ -31,4 +38,5 @@ services:
       - /app/node_modules
     command: sh -c "npm install --legacy-peer-deps && npm run dev -- --host"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy

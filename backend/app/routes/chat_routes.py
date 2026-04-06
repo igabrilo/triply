@@ -1,6 +1,7 @@
 from flask import g, jsonify, request
 from app.routes import api_bp
 from app.utils.auth import require_auth
+from app.utils.rate_limit import limiter, plan_limit, _user_key
 from app.services.chat_service import ChatService
 
 
@@ -22,6 +23,7 @@ def get_chat_history(trip_id):
 
 @api_bp.route('/trips/<trip_id>/chat', methods=['POST'])
 @require_auth
+@limiter.limit(plan_limit('chat_edit'), key_func=_user_key)
 def send_chat_message(trip_id):
     """Send a chat message, get AI response, and apply scoped edit.
 

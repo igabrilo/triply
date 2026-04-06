@@ -18,6 +18,7 @@ class User(db.Model):
     email = db.Column(db.Text, unique=True, nullable=False, index=True)
     name = db.Column(db.Text, nullable=False)
     avatar_url = db.Column(db.Text, nullable=True)
+    plan = db.Column(db.String(20), nullable=False, default='basic', server_default='basic')
 
     created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
@@ -46,6 +47,7 @@ class User(db.Model):
             'email': self.email,
             'name': self.name,
             'avatar': self.avatar_url,
+            'plan': self.plan or 'basic',
             'preferences': self.preferences.to_dict() if self.preferences else None,
             'notificationPreferences': (
                 self.notification_preferences.to_dict() if self.notification_preferences else None

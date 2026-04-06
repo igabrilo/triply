@@ -7,6 +7,7 @@ from urllib.parse import quote_plus
 from flask import Response, g, jsonify, request, stream_with_context
 from app.routes import api_bp
 from app.utils.auth import require_auth
+from app.utils.rate_limit import limiter, plan_limit, _user_key
 from app.services.trip_service import TripService
 from app.services.pdf_service import build_trip_pdf
 
@@ -170,6 +171,7 @@ def _safe_track_usage_event(user_id, trip_id, event_name: str, event_props: dict
 # ------------------------------------------------------------------
 @api_bp.route('/trips', methods=['POST'])
 @require_auth
+@limiter.limit(plan_limit('trip_generate'), key_func=_user_key)
 def create_trip():
     """Create a new trip record and return it.
 
@@ -192,6 +194,7 @@ def create_trip():
 # ------------------------------------------------------------------
 @api_bp.route('/trips/<trip_id>/stream', methods=['GET'])
 @require_auth
+@limiter.limit(plan_limit('trip_generate'), key_func=_user_key)
 def stream_trip_generation(trip_id):
     """Server-Sent Events endpoint that drives the AI generation pipeline.
 
@@ -290,7 +293,6 @@ def stream_trip_generation(trip_id):
             yield _sse('status', {'phase': 'generating_plan'})
             plan_data = ai_service.generate_plan(form_data)
             TripService.persist_plan(trip, plan_data)
-            _db.session.refresh(trip)
             expected_days = max(1, len(plan_data.days))
             yield _sse('section_ready', {
                 'section': 'plan',
@@ -308,7 +310,6 @@ def stream_trip_generation(trip_id):
             yield _sse('status', {'phase': 'generating_stays'})
             stays_data = ai_service.generate_stays(form_data)
             TripService.persist_stays(trip, stays_data)
-            _db.session.refresh(trip)
             yield _sse('section_ready', {
                 'section': 'stays',
                 'data': [s.to_dict() for s in trip.stay_options],
@@ -318,7 +319,6 @@ def stream_trip_generation(trip_id):
             yield _sse('status', {'phase': 'generating_flights'})
             flights_data = ai_service.generate_flights(form_data)
             TripService.persist_flights(trip, flights_data)
-            _db.session.refresh(trip)
             yield _sse('section_ready', {
                 'section': 'flights',
                 'data': [f.to_dict() for f in trip.flight_options],
@@ -470,7 +470,7 @@ def stream_trip_generation(trip_id):
             trip.status = 'ready' if partial_ready else 'error'
             _db.session.commit()
             TripService.complete_generation_run(run, 'failed', str(exc))
-            yield _sse('error', {'message': str(exc), 'partial': partial_ready})
+            yield _sse('error', {'message': 'Trip generation encountered an error. Please try again.', 'partial': partial_ready})
 
     return Response(
         stream_with_context(generate()),
@@ -887,7 +887,7 @@ def export_trip_overview_pdf(trip_id):
         pdf_bytes = build_trip_pdf(trip)
     except Exception as exc:
         logger.exception("PDF export failed for trip %s", trip_id)
-        return jsonify({'success': False, 'message': str(exc)}), 500
+        return jsonify({'success': False, 'message': 'Failed to generate PDF. Please try again.'}), 500
 
     destination = trip.destination or trip.title or 'trip'
     safe_destination = re.sub(r'[^A-Za-z0-9_-]+', '-', str(destination)).strip('-').lower() or 'trip'
@@ -960,6 +960,7 @@ def add_activity_to_day(trip_id, activity_id):
 
 @api_bp.route('/trips/<trip_id>/activities/generate-more', methods=['POST'])
 @require_auth
+@limiter.limit(plan_limit('activity_generate'), key_func=_user_key)
 def generate_more_activities(trip_id):
     from app.services import ai_service
     from app.services.geocoding_service import enrich_activities
@@ -1018,7 +1019,7 @@ def generate_more_activities(trip_id):
         )
     except Exception as exc:
         logger.exception("Generate-more activities failed for trip %s", trip_id)
-        return jsonify({'success': False, 'message': str(exc)}), 500
+        return jsonify({'success': False, 'message': 'Failed to generate activities. Please try again.'}), 500
 
     return jsonify({'success': True, 'added': appended, 'count': len(appended)}), 200
 
@@ -1186,6 +1187,7 @@ def update_trip_budget_entry(trip_id, entry_id):
 
 @api_bp.route('/trips/<trip_id>/weather/refresh', methods=['POST'])
 @require_auth
+@limiter.limit(plan_limit('weather_refresh'), key_func=_user_key)
 def refresh_weather(trip_id):
     from app.services import ai_service
 
@@ -1232,7 +1234,7 @@ def refresh_weather(trip_id):
         TripService.persist_generated_section(trip, 'weather', weather_payload)
     except Exception as exc:
         logger.exception("Weather refresh failed for trip %s", trip_id)
-        return jsonify({'success': False, 'message': str(exc)}), 500
+        return jsonify({'success': False, 'message': 'Failed to refresh weather. Please try again.'}), 500
 
     return jsonify({'success': True, 'weather': weather_payload, 'trip': trip.to_dict(include_details=True)}), 200
 

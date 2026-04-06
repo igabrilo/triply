@@ -138,19 +138,20 @@ def _build_chat_system_prompt(scope: str) -> str:
 # Section-by-section generation (for SSE streaming)
 # ------------------------------------------------------------------
 
-def generate_plan(form_data: dict) -> GeneratedPlan:
+def generate_plan(form_data: dict, _prompts: tuple[str, str] | None = None) -> GeneratedPlan:
     """Generate only the itinerary plan section."""
     client = _get_client()
     model = current_app.config.get('OPENAI_MODEL_GENERATION', 'gpt-5.2')
+    sys_prompt, usr_prompt = _prompts or (_build_trip_system_prompt(), _build_trip_user_prompt(form_data))
 
     for attempt in range(1 + MAX_RETRIES):
         try:
             resp = client.beta.chat.completions.parse(
                 model=model,
                 messages=[
-                    {"role": "system", "content": _build_trip_system_prompt()},
+                    {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": (
-                        _build_trip_user_prompt(form_data)
+                        usr_prompt
                         + "\n\nReturn ONLY the plan section (day-by-day itinerary)."
                     )},
                 ],
@@ -171,25 +172,26 @@ def generate_plan(form_data: dict) -> GeneratedPlan:
     raise RuntimeError("Plan generation failed after retries")
 
 
-def generate_stays(form_data: dict) -> GeneratedStays:
+def generate_stays(form_data: dict, _prompts: tuple[str, str] | None = None) -> GeneratedStays:
     """Generate only the stays section."""
     client = _get_client()
     model = current_app.config.get('OPENAI_MODEL_GENERATION', 'gpt-5.2')
+    sys_prompt, usr_prompt = _prompts or (_build_trip_system_prompt(), _build_trip_user_prompt(form_data))
 
     for attempt in range(1 + MAX_RETRIES):
         try:
             resp = client.beta.chat.completions.parse(
                 model=model,
                 messages=[
-                    {"role": "system", "content": _build_trip_system_prompt()},
+                    {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": (
-                        _build_trip_user_prompt(form_data)
+                        usr_prompt
                         + "\n\nReturn ONLY the stays section (accommodation suggestions). "
                         "Suggest 3-5 options across different price points and styles."
                     )},
                 ],
                 response_format=GeneratedStays,
-                temperature=0.7,
+                temperature=0.5,
             )
             parsed = resp.choices[0].message.parsed
             if parsed is None:
@@ -204,26 +206,27 @@ def generate_stays(form_data: dict) -> GeneratedStays:
     raise RuntimeError("Stays generation failed after retries")
 
 
-def generate_flights(form_data: dict) -> GeneratedFlights:
+def generate_flights(form_data: dict, _prompts: tuple[str, str] | None = None) -> GeneratedFlights:
     """Generate only the flights section."""
     client = _get_client()
     model = current_app.config.get('OPENAI_MODEL_GENERATION', 'gpt-5.2')
+    sys_prompt, usr_prompt = _prompts or (_build_trip_system_prompt(), _build_trip_user_prompt(form_data))
 
     for attempt in range(1 + MAX_RETRIES):
         try:
             resp = client.beta.chat.completions.parse(
                 model=model,
                 messages=[
-                    {"role": "system", "content": _build_trip_system_prompt()},
+                    {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": (
-                        _build_trip_user_prompt(form_data)
+                        usr_prompt
                         + "\n\nReturn ONLY the flights section (flight suggestions). "
                         "Suggest 3-5 flight options with different airlines and price points. "
                         "Include Google Flights search URLs as booking_search_url."
                     )},
                 ],
                 response_format=GeneratedFlights,
-                temperature=0.7,
+                temperature=0.4,
             )
             parsed = resp.choices[0].message.parsed
             if parsed is None:
@@ -243,25 +246,30 @@ def generate_trip_sections(form_data: dict) -> Generator[tuple[str, object], Non
 
     Used by the SSE endpoint to stream progress to the frontend.
     Yields generated sections progressively.
+    Pre-builds shared prompts once to avoid redundant token usage.
     """
-    yield ('plan', generate_plan(form_data))
-    yield ('stays', generate_stays(form_data))
-    yield ('flights', generate_flights(form_data))
-    yield ('activities', generate_activities(form_data))
-    yield ('weather', generate_weather(form_data))
-    yield ('budget', generate_budget(form_data))
-    yield ('tips', generate_tips(form_data))
-    yield ('overview', generate_overview(form_data))
+    system_prompt = _build_trip_system_prompt()
+    user_prompt = _build_trip_user_prompt(form_data)
+
+    yield ('plan', generate_plan(form_data, _prompts=(system_prompt, user_prompt)))
+    yield ('stays', generate_stays(form_data, _prompts=(system_prompt, user_prompt)))
+    yield ('flights', generate_flights(form_data, _prompts=(system_prompt, user_prompt)))
+    yield ('activities', generate_activities(form_data, _prompts=(system_prompt, user_prompt)))
+    yield ('weather', generate_weather(form_data, _prompts=(system_prompt, user_prompt)))
+    yield ('budget', generate_budget(form_data, _prompts=(system_prompt, user_prompt)))
+    yield ('tips', generate_tips(form_data, _prompts=(system_prompt, user_prompt)))
+    yield ('overview', generate_overview(form_data, _prompts=(system_prompt, user_prompt)))
 
 
-def generate_activities(form_data: dict, extra_instruction: str | None = None) -> GeneratedActivities:
+def generate_activities(form_data: dict, extra_instruction: str | None = None, _prompts: tuple[str, str] | None = None) -> GeneratedActivities:
     client = _get_client()
     model = current_app.config.get('OPENAI_MODEL_GENERATION', 'gpt-5.2')
+    sys_prompt, base_usr_prompt = _prompts or (_build_trip_system_prompt(), _build_trip_user_prompt(form_data))
 
     for attempt in range(1 + MAX_RETRIES):
         try:
             user_prompt = (
-                _build_trip_user_prompt(form_data)
+                base_usr_prompt
                 + "\n\nReturn ONLY an activities suggestion bucket with 15-25 suggestions. "
                 "These are candidate activities users can manually add to specific days."
             )
@@ -271,7 +279,7 @@ def generate_activities(form_data: dict, extra_instruction: str | None = None) -
             resp = client.beta.chat.completions.parse(
                 model=model,
                 messages=[
-                    {"role": "system", "content": _build_trip_system_prompt()},
+                    {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
                 response_format=GeneratedActivities,
@@ -288,14 +296,15 @@ def generate_activities(form_data: dict, extra_instruction: str | None = None) -
     raise RuntimeError("Activities generation failed after retries")
 
 
-def generate_weather(form_data: dict, extra_instruction: str | None = None) -> GeneratedWeather:
+def generate_weather(form_data: dict, extra_instruction: str | None = None, _prompts: tuple[str, str] | None = None) -> GeneratedWeather:
     client = _get_client()
     model = current_app.config.get('OPENAI_MODEL_GENERATION', 'gpt-5.2')
+    sys_prompt, base_usr_prompt = _prompts or (_build_trip_system_prompt(), _build_trip_user_prompt(form_data))
 
     for attempt in range(1 + MAX_RETRIES):
         try:
             user_prompt = (
-                _build_trip_user_prompt(form_data)
+                base_usr_prompt
                 + "\n\nReturn ONLY a practical daily weather forecast for trip dates. "
                 "Weather is informational/read-only for users."
             )
@@ -305,7 +314,7 @@ def generate_weather(form_data: dict, extra_instruction: str | None = None) -> G
             resp = client.beta.chat.completions.parse(
                 model=model,
                 messages=[
-                    {"role": "system", "content": _build_trip_system_prompt()},
+                    {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
                 response_format=GeneratedWeather,
@@ -322,14 +331,15 @@ def generate_weather(form_data: dict, extra_instruction: str | None = None) -> G
     raise RuntimeError("Weather generation failed after retries")
 
 
-def generate_budget(form_data: dict, extra_instruction: str | None = None) -> GeneratedBudget:
+def generate_budget(form_data: dict, extra_instruction: str | None = None, _prompts: tuple[str, str] | None = None) -> GeneratedBudget:
     client = _get_client()
     model = current_app.config.get('OPENAI_MODEL_GENERATION', 'gpt-5.2')
+    sys_prompt, base_usr_prompt = _prompts or (_build_trip_system_prompt(), _build_trip_user_prompt(form_data))
 
     for attempt in range(1 + MAX_RETRIES):
         try:
             user_prompt = (
-                _build_trip_user_prompt(form_data)
+                base_usr_prompt
                 + "\n\nReturn ONLY budget category estimates for this trip."
             )
             if extra_instruction:
@@ -338,7 +348,7 @@ def generate_budget(form_data: dict, extra_instruction: str | None = None) -> Ge
             resp = client.beta.chat.completions.parse(
                 model=model,
                 messages=[
-                    {"role": "system", "content": _build_trip_system_prompt()},
+                    {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
                 response_format=GeneratedBudget,
@@ -355,14 +365,15 @@ def generate_budget(form_data: dict, extra_instruction: str | None = None) -> Ge
     raise RuntimeError("Budget generation failed after retries")
 
 
-def generate_tips(form_data: dict, extra_instruction: str | None = None) -> GeneratedTips:
+def generate_tips(form_data: dict, extra_instruction: str | None = None, _prompts: tuple[str, str] | None = None) -> GeneratedTips:
     client = _get_client()
     model = current_app.config.get('OPENAI_MODEL_GENERATION', 'gpt-5.2')
+    sys_prompt, base_usr_prompt = _prompts or (_build_trip_system_prompt(), _build_trip_user_prompt(form_data))
 
     for attempt in range(1 + MAX_RETRIES):
         try:
             user_prompt = (
-                _build_trip_user_prompt(form_data)
+                base_usr_prompt
                 + "\n\nReturn ONLY practical destination tips. Include local transport availability and price guidance, "
                 "free museums/activities, safety, money, connectivity, customs, food etiquette, and useful official links where possible."
             )
@@ -372,7 +383,7 @@ def generate_tips(form_data: dict, extra_instruction: str | None = None) -> Gene
             resp = client.beta.chat.completions.parse(
                 model=model,
                 messages=[
-                    {"role": "system", "content": _build_trip_system_prompt()},
+                    {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
                 response_format=GeneratedTips,
@@ -389,14 +400,15 @@ def generate_tips(form_data: dict, extra_instruction: str | None = None) -> Gene
     raise RuntimeError("Tips generation failed after retries")
 
 
-def generate_overview(form_data: dict, extra_instruction: str | None = None) -> GeneratedOverview:
+def generate_overview(form_data: dict, extra_instruction: str | None = None, _prompts: tuple[str, str] | None = None) -> GeneratedOverview:
     client = _get_client()
     model = current_app.config.get('OPENAI_MODEL_GENERATION', 'gpt-5.2')
+    sys_prompt, base_usr_prompt = _prompts or (_build_trip_system_prompt(), _build_trip_user_prompt(form_data))
 
     for attempt in range(1 + MAX_RETRIES):
         try:
             user_prompt = (
-                _build_trip_user_prompt(form_data)
+                base_usr_prompt
                 + "\n\nReturn ONLY overview content: short summary, personalized expert advice bullets in notes_seed, and a cinematic destination photo prompt."
             )
             if extra_instruction:
@@ -405,7 +417,7 @@ def generate_overview(form_data: dict, extra_instruction: str | None = None) -> 
             resp = client.beta.chat.completions.parse(
                 model=model,
                 messages=[
-                    {"role": "system", "content": _build_trip_system_prompt()},
+                    {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
                 response_format=GeneratedOverview,

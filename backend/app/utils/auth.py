@@ -67,6 +67,11 @@ def verify_supabase_token(token: str) -> dict | None:
             algorithms=['RS256', 'ES256'],
             audience='authenticated',
         )
+
+        if not payload.get('sub'):
+            logger.warning('Token missing sub claim')
+            return None
+
         return payload
     except jwt.ExpiredSignatureError:
         logger.debug('Supabase token expired')
