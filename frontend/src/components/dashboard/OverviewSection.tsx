@@ -733,15 +733,7 @@ export default function OverviewSection() {
                 alt={`${firstWeather.condition || 'Weather'} in ${destination}`}
                 loading="lazy"
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                onError={(e) => {
-                  const img = e.currentTarget;
-                  if (img.dataset.fallback === '1') {
-                    setWeatherThumbBroken(true);
-                    return;
-                  }
-                  img.dataset.fallback = '1';
-                  img.src = buildFallbackImage(`overview-weather-${currentTrip.id}-${firstWeather.date}`, 320, 180);
-                }}
+                onError={() => setWeatherThumbBroken(true)}
               />
             ) : (
               <CloudSun size={16} style={{ color: 'var(--warning)' }} />
