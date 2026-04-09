@@ -21,7 +21,7 @@ class ChatMessage(db.Model):
     content = db.Column(db.Text, nullable=False)
     context_snapshot = db.Column(db.JSON, nullable=True)
 
-    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
     # --- Relationships ---
     thread = db.relationship('ChatThread', back_populates='messages')

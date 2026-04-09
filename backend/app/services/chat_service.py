@@ -138,7 +138,7 @@ class ChatService:
         except Exception as exc:
             logger.exception("AI chat edit failed for trip %s", trip_id)
             response_content = (
-                f"I'm sorry, I encountered an error processing your request: {str(exc)}. "
+                "I'm sorry, I encountered an error processing your request. "
                 "Please try again."
             )
             diff = None

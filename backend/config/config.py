@@ -34,6 +34,13 @@ class Config:
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB
     CORS_ORIGINS = os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(',')
 
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_size': 10,
+        'max_overflow': 5,
+        'pool_recycle': 300,
+        'pool_pre_ping': True,
+    }
+
     # Supabase Auth (only URL needed — JWT verified via public JWKS endpoint)
     SUPABASE_URL = os.getenv('SUPABASE_URL', '')
     SUPABASE_SERVICE_ROLE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY', '')
@@ -64,6 +71,7 @@ class DevelopmentConfig(Config):
 class ProductionConfig(Config):
     """Production configuration"""
     DEBUG = False
+    SECRET_KEY = _require_env('SECRET_KEY')
     SQLALCHEMY_DATABASE_URI = _require_env('DATABASE_URL')
 
 

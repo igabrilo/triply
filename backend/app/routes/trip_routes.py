@@ -10,8 +10,26 @@ from app.utils.auth import require_auth
 from app.utils.rate_limit import limiter, plan_limit, _user_key
 from app.services.trip_service import TripService
 from app.services.pdf_service import build_trip_pdf
+from app.utils.validators import validate_trip_form_data
 
 logger = logging.getLogger(__name__)
+
+# ValueError messages from TripService that are safe to expose to users
+_SAFE_VALUE_ERRORS = frozenset({
+    'Flight not found',
+    'Stay not found',
+    'Activity not found',
+    'Day not found',
+    'Item not found',
+    'Item is not in the bucket',
+    'No bucket items available',
+})
+
+
+def _safe_error_message(exc: ValueError) -> str:
+    """Return the exception message only if it's a known safe string."""
+    msg = str(exc)
+    return msg if msg in _SAFE_VALUE_ERRORS else 'Invalid request'
 
 
 def _maps_search_url(query: str) -> str:
@@ -185,6 +203,11 @@ def create_trip():
         return jsonify({'success': False, 'message': 'Form data is required'}), 400
 
     form_data = data.get('formData', data)
+
+    valid, err = validate_trip_form_data(form_data)
+    if not valid:
+        return jsonify({'success': False, 'message': err}), 400
+
     trip = TripService.create_trip_record(str(user.id), form_data)
     return jsonify({'success': True, 'trip': trip.to_dict()}), 201
 
@@ -217,6 +240,9 @@ def stream_trip_generation(trip_id):
         from app.services import ai_service
         from app import db as _db
         from app.models.usage_event import UsageEvent
+        from app.services.geocoding_service import reset_geocode_cache
+
+        reset_geocode_cache()
 
         form_data = {
             'destinations': [trip.destination] if trip.destination else [],
@@ -489,10 +515,13 @@ def stream_trip_generation(trip_id):
 @api_bp.route('/trips', methods=['GET'])
 @require_auth
 def get_trips():
-    """Get all trips for the authenticated user (summary list)."""
+    """Get trips for the authenticated user (paginated summary list)."""
     user = g.current_user
 
-    trips = TripService.get_user_trips(str(user.id))
+    limit = request.args.get('limit', 50, type=int)
+    offset = request.args.get('offset', 0, type=int)
+
+    trips = TripService.get_user_trips(str(user.id), limit=limit, offset=offset)
     for trip in trips:
         _heal_stuck_generating_trip(trip)
     return jsonify({
@@ -912,7 +941,7 @@ def select_primary_flight(trip_id, flight_id):
     try:
         TripService.select_primary_flight(trip, flight_id)
     except ValueError as exc:
-        return jsonify({'success': False, 'message': str(exc)}), 400
+        return jsonify({'success': False, 'message': _safe_error_message(exc)}), 400
     _safe_track_usage_event(trip.user_id, trip.id, 'primary_flight_selected', {'flightId': str(flight_id)})
     return jsonify({'success': True, 'trip': trip.to_dict(include_details=True)}), 200
 
@@ -927,7 +956,7 @@ def select_primary_stay(trip_id, stay_id):
     try:
         TripService.select_primary_stay(trip, stay_id)
     except ValueError as exc:
-        return jsonify({'success': False, 'message': str(exc)}), 400
+        return jsonify({'success': False, 'message': _safe_error_message(exc)}), 400
     _safe_track_usage_event(trip.user_id, trip.id, 'primary_stay_selected', {'stayId': str(stay_id)})
     return jsonify({'success': True, 'trip': trip.to_dict(include_details=True)}), 200
 
@@ -948,7 +977,7 @@ def add_activity_to_day(trip_id, activity_id):
     try:
         TripService.add_suggested_activity_to_day(trip, activity_id, int(day_number))
     except ValueError as exc:
-        return jsonify({'success': False, 'message': str(exc)}), 400
+        return jsonify({'success': False, 'message': _safe_error_message(exc)}), 400
     _safe_track_usage_event(
         trip.user_id,
         trip.id,
@@ -1037,7 +1066,7 @@ def update_activity_status(trip_id, activity_id):
     try:
         updated = TripService.update_suggested_activity_status(trip, activity_id, status)
     except ValueError as exc:
-        return jsonify({'success': False, 'message': str(exc)}), 400
+        return jsonify({'success': False, 'message': _safe_error_message(exc)}), 400
     return jsonify({'success': True, 'activity': updated, 'trip': trip.to_dict(include_details=True)}), 200
 
 
@@ -1249,7 +1278,7 @@ def return_plan_item_to_bucket(trip_id, item_id):
     try:
         TripService.return_plan_item_to_bucket(trip, item_id)
     except ValueError as exc:
-        return jsonify({'success': False, 'message': str(exc)}), 400
+        return jsonify({'success': False, 'message': _safe_error_message(exc)}), 400
     return jsonify({'success': True, 'trip': trip.to_dict(include_details=True)}), 200
 
 
@@ -1266,7 +1295,7 @@ def autofill_day(trip_id, day_number):
 
     try:
         added = TripService.autofill_day_from_bucket(trip, day_number=day_number, limit=int(limit))
-    except ValueError as exc:
-        return jsonify({'success': False, 'message': str(exc)}), 400
+    except (ValueError, TypeError) as exc:
+        return jsonify({'success': False, 'message': _safe_error_message(exc)}), 400
 
     return jsonify({'success': True, 'added': added, 'trip': trip.to_dict(include_details=True)}), 200

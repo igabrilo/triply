@@ -400,7 +400,9 @@ function WeatherLayerSelector({
 /* ── Main component ── */
 
 export default function MapSection() {
-  const { currentTrip, selectedDay, setSelectedDay } = useTripStore();
+  const currentTrip = useTripStore((s) => s.currentTrip);
+  const selectedDay = useTripStore((s) => s.selectedDay);
+  const setSelectedDay = useTripStore((s) => s.setSelectedDay);
   const [activeCategory, setActiveCategory] = useState('All');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);

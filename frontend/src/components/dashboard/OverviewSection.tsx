@@ -255,16 +255,14 @@ function labelCat(value: string): string {
 }
 
 export default function OverviewSection() {
-  const {
-    currentTrip,
-    saveTripNotes,
-    addBudgetEntry,
-    deleteBudgetEntry,
-    setActiveTab,
-    setSelectedDay,
-    setFocusFlightId,
-    setFocusStayId,
-  } = useTripStore();
+  const currentTrip = useTripStore((s) => s.currentTrip);
+  const saveTripNotes = useTripStore((s) => s.saveTripNotes);
+  const addBudgetEntry = useTripStore((s) => s.addBudgetEntry);
+  const deleteBudgetEntry = useTripStore((s) => s.deleteBudgetEntry);
+  const setActiveTab = useTripStore((s) => s.setActiveTab);
+  const setSelectedDay = useTripStore((s) => s.setSelectedDay);
+  const setFocusFlightId = useTripStore((s) => s.setFocusFlightId);
+  const setFocusStayId = useTripStore((s) => s.setFocusStayId);
   const [coverImageIndex, setCoverImageIndex] = useState(0);
   const [flightLogoBroken, setFlightLogoBroken] = useState(false);
   const [stayThumbBroken, setStayThumbBroken] = useState(false);

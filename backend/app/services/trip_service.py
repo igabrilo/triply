@@ -15,6 +15,7 @@ from app.models.plan_item import PlanItem
 from app.models.flight_option import FlightOption
 from app.models.stay_option import StayOption
 from app.models.trip_generation_run import TripGenerationRun
+from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 logger = logging.getLogger(__name__)
@@ -811,14 +812,32 @@ class TripService:
     # Read
     # ------------------------------------------------------------------
     @staticmethod
-    def get_user_trips(user_id: str):
-        """Get all trips for a user, most recent first."""
-        return Trip.query.filter_by(user_id=user_id).order_by(Trip.created_at.desc()).all()
+    def get_user_trips(user_id: str, limit: int = 50, offset: int = 0):
+        """Get trips for a user, most recent first, with pagination."""
+        limit = max(1, min(limit, 100))
+        offset = max(0, offset)
+        return (
+            Trip.query
+            .filter_by(user_id=user_id)
+            .order_by(Trip.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
 
     @staticmethod
     def get_trip(trip_id: str, user_id: str):
-        """Get a single trip (ownership check)."""
-        return Trip.query.filter_by(id=trip_id, user_id=user_id).first()
+        """Get a single trip (ownership check) with eager-loaded relations."""
+        return (
+            Trip.query
+            .options(
+                selectinload(Trip.days).selectinload(TripDay.plan_items),
+                selectinload(Trip.flight_options),
+                selectinload(Trip.stay_options),
+            )
+            .filter_by(id=trip_id, user_id=user_id)
+            .first()
+        )
 
     @staticmethod
     def select_primary_flight(trip: Trip, flight_id: str) -> None:

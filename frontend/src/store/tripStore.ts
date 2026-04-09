@@ -670,17 +670,21 @@ export const useTripStore = create<TripState>((set, get) => ({
     }),
 
   selectPrimaryFlight: async (flightId) => {
-    const { currentTrip, loadTrip } = get();
+    const { currentTrip } = get();
     if (!currentTrip) return;
-    await tripAPI.selectPrimaryFlight(currentTrip.id, flightId);
-    await loadTrip(currentTrip.id);
+    const result = await tripAPI.selectPrimaryFlight(currentTrip.id, flightId);
+    if (result?.success && result?.trip) {
+      set({ currentTrip: mapBackendTripToTrip(result.trip) });
+    }
   },
 
   selectPrimaryStay: async (stayId) => {
-    const { currentTrip, loadTrip } = get();
+    const { currentTrip } = get();
     if (!currentTrip) return;
-    await tripAPI.selectPrimaryStay(currentTrip.id, stayId);
-    await loadTrip(currentTrip.id);
+    const result = await tripAPI.selectPrimaryStay(currentTrip.id, stayId);
+    if (result?.success && result?.trip) {
+      set({ currentTrip: mapBackendTripToTrip(result.trip) });
+    }
   },
 
   addSuggestedActivityToDay: async (activityId, dayNumber) => {
@@ -696,10 +700,12 @@ export const useTripStore = create<TripState>((set, get) => ({
   },
 
   generateMoreActivities: async (category) => {
-    const { currentTrip, loadTrip } = get();
+    const { currentTrip } = get();
     if (!currentTrip) return;
-    await tripAPI.generateMoreActivities(currentTrip.id, category);
-    await loadTrip(currentTrip.id);
+    const result = await tripAPI.generateMoreActivities(currentTrip.id, category);
+    if (result?.success && result?.trip) {
+      set({ currentTrip: mapBackendTripToTrip(result.trip) });
+    }
   },
 
   updateSuggestedActivityStatus: async (activityId, status) => {
@@ -715,10 +721,12 @@ export const useTripStore = create<TripState>((set, get) => ({
   },
 
   returnPlanItemToBucket: async (itemId) => {
-    const { currentTrip, loadTrip } = get();
+    const { currentTrip } = get();
     if (!currentTrip) return;
-    await tripAPI.returnPlanItemToBucket(currentTrip.id, itemId);
-    await loadTrip(currentTrip.id);
+    const result = await tripAPI.returnPlanItemToBucket(currentTrip.id, itemId);
+    if (result?.success && result?.trip) {
+      set({ currentTrip: mapBackendTripToTrip(result.trip) });
+    }
   },
 
   autofillDay: async (dayNumber, limit = 3) => {
@@ -734,10 +742,12 @@ export const useTripStore = create<TripState>((set, get) => ({
   },
 
   refreshWeather: async () => {
-    const { currentTrip, loadTrip } = get();
+    const { currentTrip } = get();
     if (!currentTrip) return;
-    await tripAPI.refreshWeather(currentTrip.id);
-    await loadTrip(currentTrip.id);
+    const result = await tripAPI.refreshWeather(currentTrip.id);
+    if (result?.success && result?.trip) {
+      set({ currentTrip: mapBackendTripToTrip(result.trip) });
+    }
   },
 
   saveTripNotes: async (notes) => {
@@ -751,31 +761,39 @@ export const useTripStore = create<TripState>((set, get) => ({
   },
 
   saveOverviewImage: async (imageUrl) => {
-    const { currentTrip, loadTrip } = get();
+    const { currentTrip } = get();
     if (!currentTrip) return;
-    await tripAPI.updateOverviewImage(currentTrip.id, imageUrl);
-    await loadTrip(currentTrip.id);
+    const result = await tripAPI.updateOverviewImage(currentTrip.id, imageUrl);
+    if (result?.success && result?.trip) {
+      set({ currentTrip: mapBackendTripToTrip(result.trip) });
+    }
   },
 
   saveOverviewDescription: async (description) => {
-    const { currentTrip, loadTrip } = get();
+    const { currentTrip } = get();
     if (!currentTrip) return;
-    await tripAPI.updateOverviewDescription(currentTrip.id, description);
-    await loadTrip(currentTrip.id);
+    const result = await tripAPI.updateOverviewDescription(currentTrip.id, description);
+    if (result?.success && result?.trip) {
+      set({ currentTrip: mapBackendTripToTrip(result.trip) });
+    }
   },
 
   addBudgetEntry: async (payload) => {
-    const { currentTrip, loadTrip } = get();
+    const { currentTrip } = get();
     if (!currentTrip) return;
-    await tripAPI.addBudgetEntry(currentTrip.id, payload);
-    await loadTrip(currentTrip.id);
+    const result = await tripAPI.addBudgetEntry(currentTrip.id, payload);
+    if (result?.success && result?.trip) {
+      set({ currentTrip: mapBackendTripToTrip(result.trip) });
+    }
   },
 
   updateBudgetEntry: async (entryId, payload) => {
-    const { currentTrip, loadTrip } = get();
+    const { currentTrip } = get();
     if (!currentTrip) return;
-    await tripAPI.updateBudgetEntry(currentTrip.id, entryId, payload);
-    await loadTrip(currentTrip.id);
+    const result = await tripAPI.updateBudgetEntry(currentTrip.id, entryId, payload);
+    if (result?.success && result?.trip) {
+      set({ currentTrip: mapBackendTripToTrip(result.trip) });
+    }
   },
 
   deleteBudgetEntry: async (entryId) => {

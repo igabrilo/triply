@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote_plus
 from typing import Generator, Optional
 
@@ -251,14 +252,34 @@ def generate_trip_sections(form_data: dict) -> Generator[tuple[str, object], Non
     system_prompt = _build_trip_system_prompt()
     user_prompt = _build_trip_user_prompt(form_data)
 
-    yield ('plan', generate_plan(form_data, _prompts=(system_prompt, user_prompt)))
-    yield ('stays', generate_stays(form_data, _prompts=(system_prompt, user_prompt)))
-    yield ('flights', generate_flights(form_data, _prompts=(system_prompt, user_prompt)))
-    yield ('activities', generate_activities(form_data, _prompts=(system_prompt, user_prompt)))
-    yield ('weather', generate_weather(form_data, _prompts=(system_prompt, user_prompt)))
-    yield ('budget', generate_budget(form_data, _prompts=(system_prompt, user_prompt)))
-    yield ('tips', generate_tips(form_data, _prompts=(system_prompt, user_prompt)))
-    yield ('overview', generate_overview(form_data, _prompts=(system_prompt, user_prompt)))
+    prompts = (system_prompt, user_prompt)
+
+    # Phase 1: sequential sections that depend on prior context
+    yield ('plan', generate_plan(form_data, _prompts=prompts))
+    yield ('stays', generate_stays(form_data, _prompts=prompts))
+    yield ('flights', generate_flights(form_data, _prompts=prompts))
+    yield ('activities', generate_activities(form_data, _prompts=prompts))
+
+    # Phase 2: independent sections — run in parallel for ~30-50% time savings
+    app = current_app._get_current_object()
+    parallel_sections = {
+        'weather': generate_weather,
+        'budget': generate_budget,
+        'tips': generate_tips,
+        'overview': generate_overview,
+    }
+
+    def _run_section(name, fn):
+        with app.app_context():
+            return name, fn(form_data, _prompts=prompts)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {
+            pool.submit(_run_section, name, fn): name
+            for name, fn in parallel_sections.items()
+        }
+        for future in as_completed(futures):
+            yield future.result()
 
 
 def generate_activities(form_data: dict, extra_instruction: str | None = None, _prompts: tuple[str, str] | None = None) -> GeneratedActivities:
