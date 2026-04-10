@@ -49,6 +49,8 @@ class Config:
     XROUTE_AI_API_KEY = os.getenv('XROUTE_AI_API_KEY', '')
     OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://api.xroute.ai/openai/v1')
     OPENAI_MODEL_GENERATION = os.getenv('OPENAI_MODEL_GENERATION', 'gpt-5.2')
+    OPENAI_MODEL_GENERATION_MID = os.getenv('OPENAI_MODEL_GENERATION_MID', 'gpt-4.1')
+    OPENAI_MODEL_GENERATION_LITE = os.getenv('OPENAI_MODEL_GENERATION_LITE', 'gpt-4.1-mini')
     OPENAI_MODEL_CHAT = os.getenv('OPENAI_MODEL_CHAT', 'gpt-5-mini')
 
     # Google Maps (optional – enables real geocoding for plan items)

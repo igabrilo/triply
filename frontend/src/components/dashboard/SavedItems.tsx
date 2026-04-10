@@ -3,7 +3,15 @@ import { Plane, MapPin, Calendar, X } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
 
 export default function SavedItems() {
-  const { currentTrip, updateActivityStatus, updateSuggestedActivityStatus, toggleFlightSaved, toggleStaySaved, setActiveTab, setSelectedDay, setFocusFlightId, setFocusStayId } = useTripStore();
+  const currentTrip = useTripStore((s) => s.currentTrip);
+  const updateActivityStatus = useTripStore((s) => s.updateActivityStatus);
+  const updateSuggestedActivityStatus = useTripStore((s) => s.updateSuggestedActivityStatus);
+  const toggleFlightSaved = useTripStore((s) => s.toggleFlightSaved);
+  const toggleStaySaved = useTripStore((s) => s.toggleStaySaved);
+  const setActiveTab = useTripStore((s) => s.setActiveTab);
+  const setSelectedDay = useTripStore((s) => s.setSelectedDay);
+  const setFocusFlightId = useTripStore((s) => s.setFocusFlightId);
+  const setFocusStayId = useTripStore((s) => s.setFocusStayId);
 
   if (!currentTrip) return null;
 

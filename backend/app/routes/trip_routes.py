@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote_plus
 
@@ -165,6 +166,15 @@ def _overview_quality_score(overview_payload) -> tuple[int, bool]:
     return score, ok
 
 
+def _downgrade_tier(tier: str) -> str:
+    """Return the next cheaper model tier for guardrail retries."""
+    if tier == 'premium':
+        return 'mid'
+    if tier == 'mid':
+        return 'lite'
+    return 'lite'
+
+
 def _safe_track_usage_event(user_id, trip_id, event_name: str, event_props: dict | None = None):
     from app import db as _db
     from app.models.usage_event import UsageEvent
@@ -280,6 +290,7 @@ def stream_trip_generation(trip_id):
             )
 
         run = TripService.create_generation_run(trip, form_data)
+        user_plan = getattr(user, 'plan', None)
 
         # Resolve destination early for hero image fetch
         primary_destination = (
@@ -315,49 +326,66 @@ def stream_trip_generation(trip_id):
         _hero_thread.start()
 
         try:
-            # Phase 1: Plan
+            # Phase 1: Plan + Stays + Flights in parallel (no dependencies between them)
             yield _sse('status', {'phase': 'generating_plan'})
-            plan_data = ai_service.generate_plan(form_data)
-            TripService.persist_plan(trip, plan_data)
-            expected_days = max(1, len(plan_data.days))
-            yield _sse('section_ready', {
-                'section': 'plan',
-                'data': [d.to_dict() for d in trip.days],
-            })
 
-            # Emit hero image as soon as it's ready (non-blocking check then short wait)
-            _hero_thread.join(timeout=5)
-            if _hero_result[0]:
-                _early_overview = {'cached_image_url': _hero_result[0]}
-                TripService.persist_generated_section(trip, 'overview', _early_overview)
-                yield _sse('section_ready', {'section': 'overview', 'data': _early_overview})
+            def _gen_plan():
+                with _app.app_context():
+                    return ai_service.generate_plan(form_data, user_plan=user_plan)
 
-            # Phase 2: Stays
-            yield _sse('status', {'phase': 'generating_stays'})
-            stays_data = ai_service.generate_stays(form_data)
-            TripService.persist_stays(trip, stays_data)
-            yield _sse('section_ready', {
-                'section': 'stays',
-                'data': [s.to_dict() for s in trip.stay_options],
-            })
+            def _gen_stays():
+                with _app.app_context():
+                    return ai_service.generate_stays(form_data, user_plan=user_plan)
 
-            # Phase 3: Flights
-            yield _sse('status', {'phase': 'generating_flights'})
-            flights_data = ai_service.generate_flights(form_data)
-            TripService.persist_flights(trip, flights_data)
-            yield _sse('section_ready', {
-                'section': 'flights',
-                'data': [f.to_dict() for f in trip.flight_options],
-            })
+            def _gen_flights():
+                with _app.app_context():
+                    return ai_service.generate_flights(form_data, user_plan=user_plan)
+
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                plan_future = pool.submit(_gen_plan)
+                stays_future = pool.submit(_gen_stays)
+                flights_future = pool.submit(_gen_flights)
+
+                # Wait for plan first (activities needs expected_days)
+                plan_data = plan_future.result()
+                TripService.persist_plan(trip, plan_data)
+                expected_days = max(1, len(plan_data.days))
+                yield _sse('section_ready', {
+                    'section': 'plan',
+                    'data': [d.to_dict() for d in trip.days],
+                })
+
+                # Emit hero image as soon as it's ready (non-blocking check then short wait)
+                _hero_thread.join(timeout=5)
+                if _hero_result[0]:
+                    _early_overview = {'cached_image_url': _hero_result[0]}
+                    TripService.persist_generated_section(trip, 'overview', _early_overview)
+                    yield _sse('section_ready', {'section': 'overview', 'data': _early_overview})
+
+                # Stays (likely already done by now)
+                stays_data = stays_future.result()
+                TripService.persist_stays(trip, stays_data)
+                yield _sse('section_ready', {
+                    'section': 'stays',
+                    'data': [s.to_dict() for s in trip.stay_options],
+                })
+
+                # Flights (likely already done by now)
+                flights_data = flights_future.result()
+                TripService.persist_flights(trip, flights_data)
+                yield _sse('section_ready', {
+                    'section': 'flights',
+                    'data': [f.to_dict() for f in trip.flight_options],
+                })
 
             # Core trip is usable after plan + flights + stays.
             if trip.status != 'ready':
                 trip.status = 'ready'
                 _db.session.commit()
 
-            # Phase 4: Activities bucket
+            # Phase 2: Activities bucket
             yield _sse('status', {'phase': 'generating_activities'})
-            activities_data = ai_service.generate_activities(form_data)
+            activities_data = ai_service.generate_activities(form_data, user_plan=user_plan)
             activities_payload = _activities_to_payload(activities_data)
             activities_score, activities_ok = _activities_quality_score(activities_payload, expected_days)
             if not activities_ok:
@@ -367,6 +395,8 @@ def stream_trip_generation(trip_id):
                         "Return at least 15 concrete, diverse activities. "
                         "Avoid generic placeholders and include place_query for each item."
                     ),
+                    user_plan=user_plan,
+                    model_tier_override=_downgrade_tier('premium'),
                 )
                 retry_payload = _activities_to_payload(retry_data)
                 retry_score, _ = _activities_quality_score(retry_payload, expected_days)
@@ -392,96 +422,117 @@ def stream_trip_generation(trip_id):
                 'data': activities_payload,
             })
 
-            # Phase 5: Weather (informational)
-            yield _sse('status', {'phase': 'generating_weather'})
-            weather_data = ai_service.generate_weather(form_data)
-            weather_payload = [w.model_dump() for w in weather_data.days]
-            weather_score, weather_ok = _weather_quality_score(weather_payload, expected_days)
-            if not weather_ok:
-                retry_data = ai_service.generate_weather(
-                    form_data,
-                    extra_instruction=(
-                        "Cover each trip day with practical conditions and reasonable temperatures. "
-                        "Keep dates sequential and avoid empty condition fields."
-                    ),
-                )
-                retry_payload = [w.model_dump() for w in retry_data.days]
-                retry_score, _ = _weather_quality_score(retry_payload, expected_days)
-                track_guardrail_retry('weather', weather_score, retry_score)
-                if retry_score >= weather_score:
-                    weather_payload = retry_payload
-            weather_score, weather_ok = _weather_quality_score(weather_payload, expected_days)
-            if not weather_ok:
-                weather_payload = _build_weather_fallback_payload(form_data, expected_days)
-                logger.warning("Weather fallback used for trip %s", trip_id)
-            TripService.persist_generated_section(trip, 'weather', weather_payload)
-            yield _sse('section_ready', {
-                'section': 'weather',
-                'data': weather_payload,
-            })
+            # Phase 3: Weather + Budget + Tips + Overview in parallel.
+            for phase in ('generating_weather', 'generating_budget', 'generating_tips', 'generating_overview'):
+                yield _sse('status', {'phase': phase})
 
-            # Phase 6: Budget hints
-            yield _sse('status', {'phase': 'generating_budget'})
-            budget_data = ai_service.generate_budget(form_data)
-            budget_payload = budget_data.model_dump()
-            budget_score, budget_ok = _budget_quality_score(budget_payload)
-            if not budget_ok:
-                retry_data = ai_service.generate_budget(
-                    form_data,
-                    extra_instruction=(
-                        "Provide at least 4 budget categories with realistic estimated_amount values "
-                        "and include total_estimated."
-                    ),
-                )
-                retry_payload = retry_data.model_dump()
-                retry_score, _ = _budget_quality_score(retry_payload)
-                track_guardrail_retry('budget', budget_score, retry_score)
-                if retry_score >= budget_score:
-                    budget_payload = retry_payload
-            TripService.persist_generated_section(trip, 'budget', budget_payload)
-            yield _sse('section_ready', {
-                'section': 'budget',
-                'data': budget_payload,
-            })
+            def _gen_weather_payload():
+                return _build_weather_fallback_payload(form_data, expected_days)
 
-            # Phase 7: Destination tips
-            yield _sse('status', {'phase': 'generating_tips'})
-            tips_data = ai_service.generate_tips(form_data)
-            tips_payload = [tip.model_dump() for tip in tips_data.tips]
-            TripService.persist_generated_section(trip, 'tips', tips_payload)
-            yield _sse('section_ready', {
-                'section': 'tips',
-                'data': tips_payload,
-            })
+            def _gen_budget_payload():
+                budget_data = ai_service.generate_budget(form_data, user_plan=user_plan)
+                return budget_data.model_dump()
 
-            # Phase 8: Overview content + destination image
-            yield _sse('status', {'phase': 'generating_overview'})
-            overview_data = ai_service.generate_overview(form_data)
-            overview_payload = overview_data.model_dump()
-            overview_score, overview_ok = _overview_quality_score(overview_payload)
-            if not overview_ok:
-                retry_data = ai_service.generate_overview(
-                    form_data,
-                    extra_instruction=(
-                        "Write a concrete summary of at least 18 words and provide at least 3 actionable, personalized expert notes_seed bullets. "
-                        "Use a vivid, realistic destination_image_prompt."
-                    ),
-                )
-                retry_payload = retry_data.model_dump()
-                retry_score, _ = _overview_quality_score(retry_payload)
-                track_guardrail_retry('overview', overview_score, retry_score)
-                if retry_score >= overview_score:
-                    overview_payload = retry_payload
-            overview_payload['destination_image_url'] = _overview_place_photo_url(str(primary_destination))
-            # Use hero image from background thread (wait for it if still running)
-            _hero_thread.join(timeout=30)
-            if _hero_result[0]:
-                overview_payload['cached_image_url'] = _hero_result[0]
-            TripService.persist_generated_section(trip, 'overview', overview_payload)
-            yield _sse('section_ready', {
-                'section': 'overview',
-                'data': overview_payload,
-            })
+            def _gen_tips_payload():
+                tips_data = ai_service.generate_tips(form_data, user_plan=user_plan)
+                return [tip.model_dump() for tip in tips_data.tips]
+
+            def _gen_overview_payload():
+                overview_data = ai_service.generate_overview(form_data, user_plan=user_plan)
+                return overview_data.model_dump()
+
+            def _run_tail_job(section: str):
+                with _app.app_context():
+                    if section == 'weather':
+                        return section, _gen_weather_payload()
+                    if section == 'budget':
+                        return section, _gen_budget_payload()
+                    if section == 'tips':
+                        return section, _gen_tips_payload()
+                    if section == 'overview':
+                        return section, _gen_overview_payload()
+                    raise ValueError(f'Unknown generation section: {section}')
+
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                futures = {
+                    pool.submit(_run_tail_job, section): section
+                    for section in ('weather', 'budget', 'tips', 'overview')
+                }
+                for future in as_completed(futures):
+                    section, payload = future.result()
+
+                    if section == 'budget':
+                        budget_payload = payload
+                        budget_score, budget_ok = _budget_quality_score(budget_payload)
+                        if not budget_ok:
+                            retry_data = ai_service.generate_budget(
+                                form_data,
+                                extra_instruction=(
+                                    "Provide at least 4 budget categories with realistic estimated_amount values "
+                                    "and include total_estimated."
+                                ),
+                                user_plan=user_plan,
+                                model_tier_override=_downgrade_tier('lite'),
+                            )
+                            retry_payload = retry_data.model_dump()
+                            retry_score, _ = _budget_quality_score(retry_payload)
+                            track_guardrail_retry('budget', budget_score, retry_score)
+                            if retry_score >= budget_score:
+                                budget_payload = retry_payload
+
+                        TripService.persist_generated_section(trip, 'budget', budget_payload)
+                        yield _sse('section_ready', {
+                            'section': 'budget',
+                            'data': budget_payload,
+                        })
+                        continue
+
+                    if section == 'overview':
+                        overview_payload = payload
+                        overview_score, overview_ok = _overview_quality_score(overview_payload)
+                        if not overview_ok:
+                            retry_data = ai_service.generate_overview(
+                                form_data,
+                                extra_instruction=(
+                                    "Write a concrete summary of at least 18 words and provide at least 3 actionable, personalized expert notes_seed bullets. "
+                                    "Use a vivid, realistic destination_image_prompt."
+                                ),
+                                user_plan=user_plan,
+                                model_tier_override=_downgrade_tier('mid'),
+                            )
+                            retry_payload = retry_data.model_dump()
+                            retry_score, _ = _overview_quality_score(retry_payload)
+                            track_guardrail_retry('overview', overview_score, retry_score)
+                            if retry_score >= overview_score:
+                                overview_payload = retry_payload
+
+                        overview_payload['destination_image_url'] = _overview_place_photo_url(str(primary_destination))
+                        # Use hero image from background thread (wait for it if still running)
+                        _hero_thread.join(timeout=30)
+                        if _hero_result[0]:
+                            overview_payload['cached_image_url'] = _hero_result[0]
+                        TripService.persist_generated_section(trip, 'overview', overview_payload)
+                        yield _sse('section_ready', {
+                            'section': 'overview',
+                            'data': overview_payload,
+                        })
+                        continue
+
+                    if section == 'tips':
+                        tips_payload = payload
+                        TripService.persist_generated_section(trip, 'tips', tips_payload)
+                        yield _sse('section_ready', {
+                            'section': 'tips',
+                            'data': tips_payload,
+                        })
+                        continue
+
+                    weather_payload = payload
+                    TripService.persist_generated_section(trip, 'weather', weather_payload)
+                    yield _sse('section_ready', {
+                        'section': 'weather',
+                        'data': weather_payload,
+                    })
 
             # Mark trip as ready
             trip.status = 'ready'
@@ -1027,7 +1078,7 @@ def generate_more_activities(trip_id):
         extra = f"Focus suggestions on category: {focus_category}. Keep variety but bias toward this category."
 
     try:
-        generated = ai_service.generate_activities(form_data, extra_instruction=extra)
+        generated = ai_service.generate_activities(form_data, extra_instruction=extra, user_plan=getattr(user, 'plan', None))
         generated_rows = []
         for activity in generated.activities:
             row = activity.model_dump()
@@ -1225,8 +1276,6 @@ def update_trip_budget_entry(trip_id, entry_id):
 @require_auth
 @limiter.limit(plan_limit('weather_refresh'), key_func=_user_key)
 def refresh_weather(trip_id):
-    from app.services import ai_service
-
     user = g.current_user
     trip = TripService.get_trip(trip_id, str(user.id))
     if not trip:
@@ -1247,26 +1296,8 @@ def refresh_weather(trip_id):
     }
 
     try:
-        weather_data = ai_service.generate_weather(form_data)
-        weather_payload = [w.model_dump() for w in weather_data.days]
         expected_days = max(1, len(trip.days))
-        weather_score, weather_ok = _weather_quality_score(weather_payload, expected_days)
-        if not weather_ok:
-            retry_data = ai_service.generate_weather(
-                form_data,
-                extra_instruction=(
-                    "Cover each trip day with practical conditions and reasonable temperatures. "
-                    "Keep dates sequential and avoid empty condition fields."
-                ),
-            )
-            retry_payload = [w.model_dump() for w in retry_data.days]
-            retry_score, _ = _weather_quality_score(retry_payload, expected_days)
-            if retry_score >= weather_score:
-                weather_payload = retry_payload
-        weather_score, weather_ok = _weather_quality_score(weather_payload, expected_days)
-        if not weather_ok:
-            weather_payload = _build_weather_fallback_payload(form_data, expected_days)
-            logger.warning("Weather refresh fallback used for trip %s", trip_id)
+        weather_payload = _build_weather_fallback_payload(form_data, expected_days)
         TripService.persist_generated_section(trip, 'weather', weather_payload)
     except Exception as exc:
         logger.exception("Weather refresh failed for trip %s", trip_id)

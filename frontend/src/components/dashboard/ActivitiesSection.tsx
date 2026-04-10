@@ -92,7 +92,12 @@ function hasLocationOverlap(aLocation: string, bLocation: string): boolean {
 }
 
 export default function ActivitiesSection() {
-  const { currentTrip, addSuggestedActivityToDay, generateMoreActivities, updateSuggestedActivityStatus, setActiveTab, setSelectedDay } = useTripStore();
+  const currentTrip = useTripStore((s) => s.currentTrip);
+  const addSuggestedActivityToDay = useTripStore((s) => s.addSuggestedActivityToDay);
+  const generateMoreActivities = useTripStore((s) => s.generateMoreActivities);
+  const updateSuggestedActivityStatus = useTripStore((s) => s.updateSuggestedActivityStatus);
+  const setActiveTab = useTripStore((s) => s.setActiveTab);
+  const setSelectedDay = useTripStore((s) => s.setSelectedDay);
   const [activeActivityId, setActiveActivityId] = useState<string | null>(null);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [search, setSearch] = useState('');

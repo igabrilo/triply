@@ -32,7 +32,12 @@ function normalizeDestinationName(value: string): string {
 }
 
 export default function StaysSection() {
-  const { currentTrip, toggleStaySaved, selectPrimaryStay, updatedSections, focusStayId, setFocusStayId } = useTripStore();
+  const currentTrip = useTripStore((s) => s.currentTrip);
+  const toggleStaySaved = useTripStore((s) => s.toggleStaySaved);
+  const selectPrimaryStay = useTripStore((s) => s.selectPrimaryStay);
+  const updatedSections = useTripStore((s) => s.updatedSections);
+  const focusStayId = useTripStore((s) => s.focusStayId);
+  const setFocusStayId = useTripStore((s) => s.setFocusStayId);
   const { openChat } = useChatStore();
   const [activeFilter, setActiveFilter] = useState('All');
   const [showFilters, setShowFilters] = useState(false);

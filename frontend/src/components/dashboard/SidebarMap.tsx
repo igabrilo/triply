@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { memo, useState, useMemo, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -333,8 +333,10 @@ function createActivePhotoMarkerIcon(color: string, emoji: string, step?: string
 
 /* ── Main component ── */
 
-export default function SidebarMap() {
-  const { currentTrip, selectedDay, setSelectedDay } = useTripStore();
+function SidebarMap() {
+  const currentTrip = useTripStore((s) => s.currentTrip);
+  const selectedDay = useTripStore((s) => s.selectedDay);
+  const setSelectedDay = useTripStore((s) => s.setSelectedDay);
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeCategory, setActiveCategory] = useState('All');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -876,3 +878,5 @@ export default function SidebarMap() {
     </>
   );
 }
+
+export default memo(SidebarMap);
