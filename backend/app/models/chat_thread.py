@@ -13,7 +13,7 @@ class ChatThread(db.Model):
     id = db.Column(Uuid, primary_key=True, default=uuid.uuid4)
     trip_id = db.Column(Uuid, db.ForeignKey('trips.id', ondelete='CASCADE'), nullable=False, index=True)
 
-    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
     # --- Relationships ---
     trip = db.relationship('Trip', back_populates='chat_threads')

@@ -24,15 +24,15 @@ interface CategoryMeta {
 }
 
 const categoryMeta: Record<string, CategoryMeta> = {
-  transport:      { label: 'Transport',       icon: BusFront,   iconBg: 'var(--primary-50)',  iconColor: 'var(--primary-600)' },
-  free_activities:{ label: 'Free Activities', icon: Ticket,     iconBg: 'var(--success-50)',  iconColor: 'var(--success-700)' },
-  safety:         { label: 'Safety',          icon: Shield,     iconBg: '#fef2f2',            iconColor: '#dc2626' },
-  money:          { label: 'Money',           icon: Wallet,     iconBg: '#fefce8',            iconColor: '#ca8a04' },
-  connectivity:   { label: 'Connectivity',    icon: Wifi,       iconBg: '#eff6ff',            iconColor: '#2563eb' },
-  food:           { label: 'Food',            icon: Utensils,   iconBg: '#fff7ed',            iconColor: '#ea580c' },
-  customs:        { label: 'Customs',         icon: Globe,      iconBg: '#f0fdf4',            iconColor: '#16a34a' },
-  useful_links:   { label: 'Useful Links',    icon: LinkIcon,   iconBg: 'var(--primary-50)',  iconColor: 'var(--primary-600)' },
-  other:          { label: 'Other',           icon: Landmark,   iconBg: 'var(--navy-50)',     iconColor: 'var(--navy-500)' },
+  transport: { label: 'Transport', icon: BusFront, iconBg: 'var(--primary-50)', iconColor: 'var(--primary-600)' },
+  free_activities: { label: 'Free Activities', icon: Ticket, iconBg: 'var(--success-50)', iconColor: 'var(--success-700)' },
+  safety: { label: 'Safety', icon: Shield, iconBg: '#fef2f2', iconColor: '#dc2626' },
+  money: { label: 'Money', icon: Wallet, iconBg: '#fefce8', iconColor: '#ca8a04' },
+  connectivity: { label: 'Connectivity', icon: Wifi, iconBg: '#eff6ff', iconColor: '#2563eb' },
+  food: { label: 'Food', icon: Utensils, iconBg: '#fff7ed', iconColor: '#ea580c' },
+  customs: { label: 'Customs', icon: Globe, iconBg: '#f0fdf4', iconColor: '#16a34a' },
+  useful_links: { label: 'Useful Links', icon: LinkIcon, iconBg: 'var(--primary-50)', iconColor: 'var(--primary-600)' },
+  other: { label: 'Other', icon: Landmark, iconBg: 'var(--navy-50)', iconColor: 'var(--navy-500)' },
 };
 
 function normalizeCat(value?: string): string {
@@ -133,10 +133,9 @@ function TipCard({ tip, index }: { tip: TripTip; index: number }) {
 }
 
 export default function TipsSection() {
-  const { currentTrip } = useTripStore();
+  const currentTrip = useTripStore((s) => s.currentTrip);
+  const tips = useTripStore((s) => s.currentTrip?.tips || []);
   if (!currentTrip) return null;
-
-  const tips = currentTrip.tips || [];
 
   const catOrder = Object.keys(categoryMeta);
   const sorted = [...tips].sort((a, b) => {

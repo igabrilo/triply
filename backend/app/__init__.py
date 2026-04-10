@@ -35,14 +35,15 @@ def create_app(config_name='development'):
         if not flask_app.debug:
             response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
         response.headers['Content-Security-Policy'] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
+            "default-src 'none'; "
+            "script-src 'self'; "
+            "style-src 'self'; "
             "img-src 'self' https: data:; "
             "font-src 'self' https:; "
             "connect-src 'self' https://*.supabase.co https://nominatim.openstreetmap.org "
             "https://en.wikipedia.org https://commons.wikimedia.org "
-            "https://maps.googleapis.com https://places.googleapis.com"
+            "https://maps.googleapis.com https://places.googleapis.com; "
+            "frame-ancestors 'none'"
         )
         return response
 

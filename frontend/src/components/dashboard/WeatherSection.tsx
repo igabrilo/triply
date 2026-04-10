@@ -34,7 +34,7 @@ function getDateRange(start: string, end: string): string[] {
 /* ─── Component ─── */
 
 export default function WeatherSection() {
-  const { currentTrip } = useTripStore();
+  const currentTrip = useTripStore((s) => s.currentTrip);
   const [unit, setUnit] = useState<TemperatureUnit>('celsius');
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
 

@@ -30,16 +30,14 @@ function buildActivityContext(day: PlanDay, activity: Activity): string {
 }
 
 export default function PlanSection() {
-  const {
-    currentTrip,
-    selectedDay,
-    setSelectedDay,
-    setActiveTab,
-    updateActivityStatus,
-    addSuggestedActivityToDay,
-    returnPlanItemToBucket,
-    updatedSections,
-  } = useTripStore();
+  const currentTrip = useTripStore((s) => s.currentTrip);
+  const selectedDay = useTripStore((s) => s.selectedDay);
+  const setSelectedDay = useTripStore((s) => s.setSelectedDay);
+  const setActiveTab = useTripStore((s) => s.setActiveTab);
+  const updateActivityStatus = useTripStore((s) => s.updateActivityStatus);
+  const addSuggestedActivityToDay = useTripStore((s) => s.addSuggestedActivityToDay);
+  const returnPlanItemToBucket = useTripStore((s) => s.returnPlanItemToBucket);
+  const updatedSections = useTripStore((s) => s.updatedSections);
   const { openChat } = useChatStore();
   const [dropDay, setDropDay] = useState<number | null>(null);
   const [autofillError] = useState('');

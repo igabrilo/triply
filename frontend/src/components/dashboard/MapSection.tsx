@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { memo, useState, useMemo, useRef, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { MapPin, Navigation, Maximize2, ExternalLink, Map as MapIcon, CloudSun, X } from 'lucide-react';
@@ -399,8 +399,10 @@ function WeatherLayerSelector({
 
 /* ── Main component ── */
 
-export default function MapSection() {
-  const { currentTrip, selectedDay, setSelectedDay } = useTripStore();
+function MapSection() {
+  const currentTrip = useTripStore((s) => s.currentTrip);
+  const selectedDay = useTripStore((s) => s.selectedDay);
+  const setSelectedDay = useTripStore((s) => s.setSelectedDay);
   const [activeCategory, setActiveCategory] = useState('All');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
@@ -1263,3 +1265,5 @@ export default function MapSection() {
     </div>
   );
 }
+
+export default memo(MapSection);

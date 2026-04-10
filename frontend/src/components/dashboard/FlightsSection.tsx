@@ -65,7 +65,12 @@ function sortFlights(flights: Flight[], key: SortKey): Flight[] {
 }
 
 export default function FlightsSection() {
-  const { currentTrip, updatedSections, toggleFlightSaved, selectPrimaryFlight, focusFlightId, setFocusFlightId } = useTripStore();
+  const currentTrip = useTripStore((s) => s.currentTrip);
+  const updatedSections = useTripStore((s) => s.updatedSections);
+  const toggleFlightSaved = useTripStore((s) => s.toggleFlightSaved);
+  const selectPrimaryFlight = useTripStore((s) => s.selectPrimaryFlight);
+  const focusFlightId = useTripStore((s) => s.focusFlightId);
+  const setFocusFlightId = useTripStore((s) => s.setFocusFlightId);
   const { openChat } = useChatStore();
   const [sortBy, setSortBy] = useState<SortKey>('default');
   const [logoErrorByFlightId, setLogoErrorByFlightId] = useState<Record<string, boolean>>({});

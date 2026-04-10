@@ -15,6 +15,7 @@ from app.models.plan_item import PlanItem
 from app.models.flight_option import FlightOption
 from app.models.stay_option import StayOption
 from app.models.trip_generation_run import TripGenerationRun
+from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 logger = logging.getLogger(__name__)
@@ -811,14 +812,32 @@ class TripService:
     # Read
     # ------------------------------------------------------------------
     @staticmethod
-    def get_user_trips(user_id: str):
-        """Get all trips for a user, most recent first."""
-        return Trip.query.filter_by(user_id=user_id).order_by(Trip.created_at.desc()).all()
+    def get_user_trips(user_id: str, limit: int = 50, offset: int = 0):
+        """Get trips for a user, most recent first, with pagination."""
+        limit = max(1, min(limit, 100))
+        offset = max(0, offset)
+        return (
+            Trip.query
+            .filter_by(user_id=user_id)
+            .order_by(Trip.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
 
     @staticmethod
     def get_trip(trip_id: str, user_id: str):
-        """Get a single trip (ownership check)."""
-        return Trip.query.filter_by(id=trip_id, user_id=user_id).first()
+        """Get a single trip (ownership check) with eager-loaded relations."""
+        return (
+            Trip.query
+            .options(
+                selectinload(Trip.days).selectinload(TripDay.plan_items),
+                selectinload(Trip.flight_options),
+                selectinload(Trip.stay_options),
+            )
+            .filter_by(id=trip_id, user_id=user_id)
+            .first()
+        )
 
     @staticmethod
     def select_primary_flight(trip: Trip, flight_id: str) -> None:
@@ -1006,18 +1025,13 @@ class TripService:
 
     @staticmethod
     def return_plan_item_to_bucket(trip: Trip, item_id: str) -> None:
-        target_day = None
-        target_item = None
-        for day in trip.days:
-            for item in day.plan_items:
-                if str(item.id) == str(item_id):
-                    target_day = day
-                    target_item = item
-                    break
-            if target_item:
-                break
-        if not target_item or not target_day:
+        target_item = (PlanItem.query
+                       .join(TripDay)
+                       .filter(PlanItem.id == item_id, TripDay.trip_id == trip.id)
+                       .first())
+        if not target_item:
             raise ValueError('Plan item not found')
+        target_day = target_item.trip_day
 
         constraints = _constraints_snapshot(trip)
         ai_generated = constraints.get('aiGenerated', {})
@@ -1258,7 +1272,7 @@ def _persist_stay_options(trip, stays_list):
 
 
 def _resolve_trip_day(trip: Trip, day_number: int) -> TripDay | None:
-    """Resolve day by tolerant mapping.
+    """Resolve day by tolerant mapping using indexed DB queries.
 
     Prioritizes user-facing ordinal day selection (Day 1..N), while still
     supporting direct `day_index` and legacy 0-based inputs.
@@ -1268,28 +1282,31 @@ def _resolve_trip_day(trip: Trip, day_number: int) -> TripDay | None:
     except (TypeError, ValueError):
         return None
 
-    ordered_days = sorted(trip.days, key=lambda d: d.day_index)
-    if not ordered_days:
+    total_days = TripDay.query.filter_by(trip_id=trip.id).count()
+    if total_days == 0:
         return None
 
-    # 1-based fallback by ordinal position (most natural for users)
-    if 1 <= day_number <= len(ordered_days):
-        return ordered_days[day_number - 1]
+    # 1-based ordinal position (most natural for users)
+    if 1 <= day_number <= total_days:
+        return (TripDay.query
+                .filter_by(trip_id=trip.id)
+                .order_by(TripDay.day_index)
+                .offset(day_number - 1)
+                .first())
 
-    # 0-based fallback by ordinal position
-    if 0 <= day_number < len(ordered_days):
-        return ordered_days[day_number]
+    # 0-based ordinal position
+    if 0 <= day_number < total_days:
+        return (TripDay.query
+                .filter_by(trip_id=trip.id)
+                .order_by(TripDay.day_index)
+                .offset(day_number)
+                .first())
 
-    direct = next((d for d in trip.days if d.day_index == day_number), None)
-    if direct:
-        return direct
-
-    plus_one = next((d for d in trip.days if d.day_index == day_number + 1), None)
-    if plus_one:
-        return plus_one
-    minus_one = next((d for d in trip.days if d.day_index == day_number - 1), None)
-    if minus_one:
-        return minus_one
+    # Direct day_index match, then +/- 1 fuzzy match
+    for idx in (day_number, day_number + 1, day_number - 1):
+        day = TripDay.query.filter_by(trip_id=trip.id, day_index=idx).first()
+        if day:
+            return day
 
     return None
 

@@ -84,8 +84,10 @@ class ChatService:
             db.session.add(thread)
             db.session.flush()
 
-        # Determine scope
-        scope = (edit_scope.get('section') if edit_scope else None) or 'plan'
+        # Determine scope (whitelist to prevent prompt injection via scope field)
+        VALID_SCOPES = frozenset({'plan', 'stays', 'flights', 'activities', 'budget', 'tips', 'weather', 'overview'})
+        raw_scope = (edit_scope.get('section') if edit_scope else None) or 'plan'
+        scope = raw_scope if raw_scope in VALID_SCOPES else 'plan'
         day_number = edit_scope.get('dayNumber') if edit_scope else None
         target_ref_type = edit_scope.get('targetRefType') if edit_scope else None
         target_ref_id = edit_scope.get('targetRefId') if edit_scope else None
@@ -138,7 +140,7 @@ class ChatService:
         except Exception as exc:
             logger.exception("AI chat edit failed for trip %s", trip_id)
             response_content = (
-                f"I'm sorry, I encountered an error processing your request: {str(exc)}. "
+                "I'm sorry, I encountered an error processing your request. "
                 "Please try again."
             )
             diff = None

@@ -25,9 +25,9 @@ class Trip(db.Model):
     constraints = db.Column(db.JSON, nullable=True)
     must_do = db.Column(db.Text, nullable=True)
 
-    status = db.Column(db.Text, default='generating')          # generating | ready | error
+    status = db.Column(db.Text, default='generating', index=True)  # generating | ready | error
 
-    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
     updated_at = db.Column(
         db.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

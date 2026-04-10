@@ -1,25 +1,27 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Sparkles, Plane, Building2, MapPin, Check } from 'lucide-react';
 import Layout from '@components/layout/Layout';
 import DashboardHeader from '@components/dashboard/DashboardHeader';
 import FirstPlanGuide from '@components/dashboard/FirstPlanGuide';
-import OverviewSection from '@components/dashboard/OverviewSection';
-import PlanSection from '@components/dashboard/PlanSection';
-import ActivitiesSection from '@components/dashboard/ActivitiesSection';
-import FlightsSection from '@components/dashboard/FlightsSection';
-import StaysSection from '@components/dashboard/StaysSection';
-import WeatherSection from '@components/dashboard/WeatherSection';
-import TipsSection from '@components/dashboard/TipsSection';
-import MapSection from '@components/dashboard/MapSection';
-import ProfileSection from '@components/dashboard/ProfileSection';
 import QuickTweaks from '@components/dashboard/QuickTweaks';
-import SavedItems from '@components/dashboard/SavedItems';
-import SidebarMap from '@components/dashboard/SidebarMap';
 import ChatPanel from '@components/chat/ChatPanel';
 import { useTripStore } from '@/store/tripStore';
 import { featureFlags } from '@/config/featureFlags';
+
+// Lazy-loaded dashboard sections — only loaded when the user navigates to the tab
+const OverviewSection = lazy(() => import('@components/dashboard/OverviewSection'));
+const PlanSection = lazy(() => import('@components/dashboard/PlanSection'));
+const ActivitiesSection = lazy(() => import('@components/dashboard/ActivitiesSection'));
+const FlightsSection = lazy(() => import('@components/dashboard/FlightsSection'));
+const StaysSection = lazy(() => import('@components/dashboard/StaysSection'));
+const WeatherSection = lazy(() => import('@components/dashboard/WeatherSection'));
+const TipsSection = lazy(() => import('@components/dashboard/TipsSection'));
+const MapSection = lazy(() => import('@components/dashboard/MapSection'));
+const ProfileSection = lazy(() => import('@components/dashboard/ProfileSection'));
+const SavedItems = lazy(() => import('@components/dashboard/SavedItems'));
+const SidebarMap = lazy(() => import('@components/dashboard/SidebarMap'));
 
 /* ─── Generation progress steps ─── */
 const generationSteps = [
@@ -252,19 +254,23 @@ export default function Dashboard() {
         <div className="dashboard-main-wrap" style={{ display: 'flex', gap: 24, flexDirection: showSidebar ? 'row' : 'column' }}>
           {/* Main */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <AnimatePresence mode="wait">
-              <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.25 }}>
-                {renderSection()}
-              </motion.div>
-            </AnimatePresence>
+            <Suspense fallback={<div style={{ padding: 32, textAlign: 'center', opacity: 0.5 }}>Loading…</div>}>
+              <AnimatePresence mode="wait">
+                <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.25 }}>
+                  {renderSection()}
+                </motion.div>
+              </AnimatePresence>
+            </Suspense>
           </div>
 
           {/* Sidebar */}
           {showSidebar && (
             <div style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16 }} className="hide-mobile dashboard-sidebar print-hide">
               <QuickTweaks />
-              <SidebarMap />
-              <SavedItems />
+              <Suspense fallback={null}>
+                <SidebarMap />
+                <SavedItems />
+              </Suspense>
             </div>
           )}
         </div>

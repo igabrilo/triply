@@ -20,11 +20,31 @@ from urllib.parse import quote_plus
 
 import requests
 from flask import current_app
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
 # Nominatim allows max 1 request per second; throttle to avoid rate-limit HTML responses
 _nominatim_last_request: float = 0
+
+# Per-generation geocode cache to avoid duplicate lookups for the same query
+_geocode_cache: dict[str, dict] = {}
+
+
+def reset_geocode_cache():
+    """Clear the geocode cache (call at the start of each trip generation)."""
+    _geocode_cache.clear()
+
+# Domains we allow image downloads from (SSRF protection)
+_ALLOWED_IMAGE_DOMAINS = frozenset({
+    'maps.googleapis.com',
+    'places.googleapis.com',
+    'lh3.googleusercontent.com',
+    'upload.wikimedia.org',
+    'commons.wikimedia.org',
+    'en.wikipedia.org',
+    'loremflickr.com',
+})
 
 
 _DESTINATION_ALIAS_MAP: dict[str, str] = {
@@ -160,8 +180,23 @@ def _google_maps_search_url(query: str) -> str:
     return f"https://www.google.com/maps/search/{quote_plus(query)}"
 
 
+def _is_allowed_image_url(url: str) -> bool:
+    """Check URL against domain allowlist to prevent SSRF."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ('http', 'https'):
+            return False
+        host = (parsed.hostname or '').lower()
+        return host in _ALLOWED_IMAGE_DOMAINS
+    except Exception:
+        return False
+
+
 def _download_image_url(url: str):
     if not url:
+        return None
+    if not _is_allowed_image_url(url):
+        logger.warning("Blocked image download from disallowed domain: %s", urlparse(url).hostname)
         return None
     try:
         resp = requests.get(
@@ -171,8 +206,24 @@ def _download_image_url(url: str):
                 'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
             },
             timeout=12,
-            allow_redirects=True,
+            allow_redirects=False,
         )
+        # Follow redirects only to allowed domains
+        if resp.status_code in (301, 302, 303, 307, 308):
+            redirect_url = resp.headers.get('Location', '')
+            if _is_allowed_image_url(redirect_url):
+                resp = requests.get(
+                    redirect_url,
+                    headers={
+                        'User-Agent': 'Triply/1.0 (travel-planner)',
+                        'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+                    },
+                    timeout=12,
+                    allow_redirects=False,
+                )
+            else:
+                logger.warning("Blocked redirect to disallowed domain: %s", urlparse(redirect_url).hostname)
+                return None
         content_type = resp.headers.get('Content-Type', 'image/jpeg').split(';')[0].strip()
         if resp.status_code == 200 and content_type.startswith('image/'):
             return resp.content, content_type
@@ -441,6 +492,12 @@ def geocode_place(query: str) -> dict:
     api_key = current_app.config.get('GOOGLE_MAPS_API_KEY', '')
     query = _extract_place_from_query(query)
 
+    # Return cached result if available (avoids duplicate API calls within a generation)
+    cache_key = query.strip().lower()
+    if cache_key in _geocode_cache:
+        logger.debug("Geocode cache hit for %r", query)
+        return _geocode_cache[cache_key]
+
     result = {
         'lat': None,
         'lng': None,
@@ -526,6 +583,7 @@ def geocode_place(query: str) -> dict:
         except Exception as exc:
             logger.warning("Nominatim geocoding failed for %r: %s", query, exc)
 
+    _geocode_cache[cache_key] = result
     return result
 
 

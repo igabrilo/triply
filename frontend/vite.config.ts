@@ -19,6 +19,18 @@ export default defineConfig({
       '@store': path.resolve(__dirname, './src/store'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-motion': ['framer-motion'],
+          'vendor-leaflet': ['leaflet', 'react-leaflet'],
+          'vendor-zustand': ['zustand'],
+        },
+      },
+    },
+  },
   server: {
     port: 3000,
     proxy: {

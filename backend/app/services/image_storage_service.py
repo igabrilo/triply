@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 BUCKET_NAME = 'trip-images'
 MAX_WIDTH = 640
 MAX_WIDTH_HERO = 1600
-WEBP_QUALITY = 72
+WEBP_QUALITY = 60
+WEBP_QUALITY_HERO = 72
 
 
 def _get_supabase_client():
@@ -36,7 +37,7 @@ def _get_supabase_client():
         return None
 
 
-def _compress_to_webp(image_bytes: bytes, max_width: int = MAX_WIDTH) -> Optional[bytes]:
+def _compress_to_webp(image_bytes: bytes, max_width: int = MAX_WIDTH, quality: int | None = None) -> Optional[bytes]:
     try:
         from PIL import Image
 
@@ -49,8 +50,9 @@ def _compress_to_webp(image_bytes: bytes, max_width: int = MAX_WIDTH) -> Optiona
             ratio = max_width / w
             img = img.resize((max_width, int(h * ratio)), Image.LANCZOS)
 
+        webp_q = quality if quality is not None else (WEBP_QUALITY_HERO if max_width > MAX_WIDTH else WEBP_QUALITY)
         buf = io.BytesIO()
-        img.save(buf, format='WEBP', quality=WEBP_QUALITY, method=4)
+        img.save(buf, format='WEBP', quality=webp_q, method=4)
         return buf.getvalue()
     except Exception as exc:
         logger.warning("WebP compression failed: %s", exc)

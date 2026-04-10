@@ -14,10 +14,10 @@ class UsageEvent(db.Model):
     user_id = db.Column(Uuid, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     trip_id = db.Column(Uuid, db.ForeignKey('trips.id', ondelete='SET NULL'), nullable=True, index=True)
 
-    event_name = db.Column(db.Text, nullable=False)
+    event_name = db.Column(db.Text, nullable=False, index=True)
     event_props = db.Column(db.JSON, nullable=True)
 
-    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
     # --- Relationships ---
     user = db.relationship('User', back_populates='usage_events')

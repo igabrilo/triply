@@ -18,7 +18,10 @@ function labelCategory(value: string): string {
 }
 
 export default function BudgetSection() {
-  const { currentTrip, addBudgetEntry, updateBudgetEntry, deleteBudgetEntry } = useTripStore();
+  const currentTrip = useTripStore((s) => s.currentTrip);
+  const addBudgetEntry = useTripStore((s) => s.addBudgetEntry);
+  const updateBudgetEntry = useTripStore((s) => s.updateBudgetEntry);
+  const deleteBudgetEntry = useTripStore((s) => s.deleteBudgetEntry);
   const [category, setCategory] = useState('other');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(currentTrip?.formData?.startDate || '');

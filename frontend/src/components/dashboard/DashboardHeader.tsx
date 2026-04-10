@@ -19,7 +19,10 @@ const tabs: { id: TabId; label: string }[] = [
 ];
 
 export default function DashboardHeader() {
-  const { currentTrip, activeTab, setActiveTab, isGenerating } = useTripStore();
+  const currentTrip = useTripStore((s) => s.currentTrip);
+  const activeTab = useTripStore((s) => s.activeTab);
+  const setActiveTab = useTripStore((s) => s.setActiveTab);
+  const isGenerating = useTripStore((s) => s.isGenerating);
   const { user, logout } = useAuthStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [exporting, setExporting] = useState(false);

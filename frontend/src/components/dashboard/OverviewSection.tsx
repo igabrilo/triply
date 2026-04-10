@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowRight, CloudSun, FileText, PiggyBank, Plane, Bed, X, Plus, Trash2, Lightbulb } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
@@ -254,17 +254,15 @@ function labelCat(value: string): string {
   return n.charAt(0).toUpperCase() + n.slice(1);
 }
 
-export default function OverviewSection() {
-  const {
-    currentTrip,
-    saveTripNotes,
-    addBudgetEntry,
-    deleteBudgetEntry,
-    setActiveTab,
-    setSelectedDay,
-    setFocusFlightId,
-    setFocusStayId,
-  } = useTripStore();
+function OverviewSection() {
+  const currentTrip = useTripStore((s) => s.currentTrip);
+  const saveTripNotes = useTripStore((s) => s.saveTripNotes);
+  const addBudgetEntry = useTripStore((s) => s.addBudgetEntry);
+  const deleteBudgetEntry = useTripStore((s) => s.deleteBudgetEntry);
+  const setActiveTab = useTripStore((s) => s.setActiveTab);
+  const setSelectedDay = useTripStore((s) => s.setSelectedDay);
+  const setFocusFlightId = useTripStore((s) => s.setFocusFlightId);
+  const setFocusStayId = useTripStore((s) => s.setFocusStayId);
   const [coverImageIndex, setCoverImageIndex] = useState(0);
   const [flightLogoBroken, setFlightLogoBroken] = useState(false);
   const [stayThumbBroken, setStayThumbBroken] = useState(false);
@@ -1171,3 +1169,5 @@ export default function OverviewSection() {
     </div>
   );
 }
+
+export default memo(OverviewSection);
