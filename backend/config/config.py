@@ -45,8 +45,9 @@ class Config:
     SUPABASE_URL = os.getenv('SUPABASE_URL', '')
     SUPABASE_SERVICE_ROLE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY', '')
 
-    # OpenAI
-    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+    # xroute.ai proxy for OpenAI-compatible models
+    XROUTE_AI_API_KEY = os.getenv('XROUTE_AI_API_KEY', '')
+    OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://api.xroute.ai/openai/v1')
     OPENAI_MODEL_GENERATION = os.getenv('OPENAI_MODEL_GENERATION', 'gpt-5.2')
     OPENAI_MODEL_CHAT = os.getenv('OPENAI_MODEL_CHAT', 'gpt-5-mini')
 

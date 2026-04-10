@@ -1,8 +1,9 @@
-"""AI Service – wraps OpenAI calls for trip generation and chat edits.
+"""AI Service – wraps OpenAI-compatible calls for trip generation and chat edits.
 
 • Trip generation  → GPT-5.2  (OPENAI_MODEL_GENERATION)
 • Chat edits       → GPT-5 Mini (OPENAI_MODEL_CHAT)
 
+Routes through xroute.ai proxy (OPENAI_BASE_URL) by default.
 Uses the SDK's beta.chat.completions.parse() which natively handles
 Pydantic models as response_format (adds additionalProperties:false,
 marks all fields required, etc.).
@@ -38,10 +39,11 @@ MAX_RETRIES = 2
 
 
 def _get_client() -> OpenAI:
-    api_key = current_app.config.get('OPENAI_API_KEY', '')
+    api_key = current_app.config.get('XROUTE_AI_API_KEY', '')
     if not api_key:
-        raise RuntimeError('OPENAI_API_KEY is not configured')
-    return OpenAI(api_key=api_key)
+        raise RuntimeError('XROUTE_AI_API_KEY is not configured')
+    base_url = current_app.config.get('OPENAI_BASE_URL', 'https://api.xroute.ai/openai/v1')
+    return OpenAI(api_key=api_key, base_url=base_url)
 
 
 # ------------------------------------------------------------------
