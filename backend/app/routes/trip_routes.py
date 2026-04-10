@@ -1016,7 +1016,14 @@ def generate_more_activities(trip_id):
     payload = request.get_json() or {}
     focus_category = payload.get('category')
     extra = None
+    VALID_ACTIVITY_CATEGORIES = frozenset({
+        'attractions', 'food', 'nightlife', 'outdoors', 'shopping', 'custom',
+        'dining', 'activity', 'transport', 'landmark', 'sightseeing',
+        'adventure', 'culture', 'nature', 'relaxation', 'entertainment',
+    })
     if focus_category:
+        if focus_category not in VALID_ACTIVITY_CATEGORIES:
+            return jsonify({'error': 'Invalid activity category'}), 400
         extra = f"Focus suggestions on category: {focus_category}. Keep variety but bias toward this category."
 
     try:

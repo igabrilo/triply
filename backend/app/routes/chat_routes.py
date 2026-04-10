@@ -36,6 +36,12 @@ def send_chat_message(trip_id):
     if not data or 'content' not in data:
         return jsonify({'success': False, 'message': 'Message content is required'}), 400
 
+    content = data['content']
+    if not isinstance(content, str) or len(content) > 5000:
+        return jsonify({'success': False, 'message': 'Message must be a string of at most 5000 characters'}), 400
+    if len(content.strip()) == 0:
+        return jsonify({'success': False, 'message': 'Message content is required'}), 400
+
     result = ChatService.send_message(
         trip_id=trip_id,
         user_id=str(user.id),
