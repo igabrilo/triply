@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Download } from 'lucide-react';
+import { Crown, Download } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
 import { useAuthStore } from '@/store/authStore';
 import { tripAPI } from '@/services/api';
 import { emitGuideChanged, setGuideExportDone } from '@/utils/firstPlanGuide';
+import UpgradeModal from '@components/ui/UpgradeModal';
 import type { TabId } from '@/types';
 
 const tabs: { id: TabId; label: string }[] = [
@@ -26,6 +27,8 @@ export default function DashboardHeader() {
   const { user, logout } = useAuthStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const isPremium = user?.plan === 'premium';
 
   if (!currentTrip) return null;
 
@@ -97,8 +100,13 @@ export default function DashboardHeader() {
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button className="btn btn-ghost btn-sm" onClick={onExport} disabled={exporting}>
-            <Download size={15} /> {exporting ? 'Exporting...' : 'Export PDF'}
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={isPremium ? onExport : () => setShowUpgrade(true)}
+            disabled={exporting}
+          >
+            {isPremium ? <Download size={15} /> : <Crown size={15} style={{ color: 'var(--primary-500)' }} />}
+            {' '}{exporting ? 'Exporting...' : 'Export PDF'}
           </button>
           <div style={{ position: 'relative' }}>
             <button
@@ -160,6 +168,8 @@ export default function DashboardHeader() {
           ))}
         </div>
       </div>
+
+      <UpgradeModal isOpen={showUpgrade} onClose={() => setShowUpgrade(false)} feature="pdf" />
     </div>
   );
 }

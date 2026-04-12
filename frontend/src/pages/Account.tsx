@@ -32,7 +32,7 @@ function getDaysCount(startDate: string, endDate: string) {
 
 export default function Account() {
   const navigate = useNavigate();
-  const { isAuthenticated, user, logout } = useAuthStore();
+  const { isAuthenticated, user, logout, fetchCurrentUser } = useAuthStore();
   const { loadTrip } = useTripStore();
   const [trips, setTrips] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +42,9 @@ export default function Account() {
       navigate('/');
       return;
     }
+
+    // Refresh profile on page load so subscription tier is current.
+    fetchCurrentUser().catch(() => { });
 
     // Load user's trips
     const fetchTrips = async () => {
@@ -58,7 +61,7 @@ export default function Account() {
     };
 
     fetchTrips();
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, fetchCurrentUser]);
 
   // Redirect to home if not authenticated - show loading briefly to avoid flash
   if (!isAuthenticated || !user) {
@@ -75,6 +78,8 @@ export default function Account() {
     logout();
     navigate('/');
   };
+
+  const currentPlan = user.plan === 'premium' ? 'Premium' : 'Free';
 
   return (
     <Layout showBlobs={false}>
@@ -104,7 +109,7 @@ export default function Account() {
               </p>
             </div>
             <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-              <Button variant="ghost" size="sm" icon={<Settings size={14} />} onClick={() => {}}>
+              <Button variant="ghost" size="sm" icon={<Settings size={14} />} onClick={() => { }}>
                 Settings
               </Button>
               <Button variant="ghost" size="sm" icon={<LogOut size={14} />} onClick={handleLogout}>
@@ -129,7 +134,7 @@ export default function Account() {
                 <Crown size={16} style={{ color: 'var(--primary-600)' }} />
               </div>
               <div>
-                <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-900)', lineHeight: 1 }}>Free</p>
+                <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-900)', lineHeight: 1 }}>{currentPlan}</p>
                 <p style={{ fontSize: 12, color: 'var(--navy-500)' }}>Current plan</p>
               </div>
             </div>

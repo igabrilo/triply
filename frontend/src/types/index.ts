@@ -275,14 +275,24 @@ export interface NotificationPreferences {
   marketingOptIn?: boolean;
 }
 
+export type UserPlan = 'basic' | 'premium';
+
 export interface User {
   id: string;
   email: string;
   name: string;
   avatar?: string;
+  plan: UserPlan;
   preferences?: UserPreferences;
   notificationPreferences?: NotificationPreferences;
   createdAt: string;
+}
+
+export interface UsageLimits {
+  tripsPerDay: number | null;
+  tripsUsedToday: number;
+  chatEditsPerTripPerDay: number | null;
+  chatEditsUsedToday: number;
 }
 
 /* ─── UI State ─── */

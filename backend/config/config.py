@@ -59,6 +59,12 @@ class Config:
     # Supabase PostgreSQL (direct connection for migrations)
     MIGRATION_DATABASE_URL = os.getenv('MIGRATION_DATABASE_URL')
 
+    # Stripe
+    STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', '')
+    STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
+    STRIPE_PRICE_ID_PREMIUM = os.getenv('STRIPE_PRICE_ID_PREMIUM', '')
+    FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+
     # Feature flags (runtime, backend-controlled)
     FEATURE_FIRST_PLAN_GUIDE = _as_bool('FEATURE_FIRST_PLAN_GUIDE', True)
     FEATURE_NEXT_BEST_ACTIONS = _as_bool('FEATURE_NEXT_BEST_ACTIONS', True)

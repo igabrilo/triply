@@ -1,5 +1,8 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Check, Sparkles } from 'lucide-react';
+import { useAuthStore } from '@/store/authStore';
+import { subscriptionAPI } from '@/services/api';
 
 const plans = [
   {
@@ -8,9 +11,9 @@ const plans = [
     period: 'forever',
     description: 'Perfect for trying Triply out.',
     features: [
-      '3 trips per month',
+      '2 trips per day',
       'Basic AI itinerary',
-      '5 chat edits per trip',
+      '5 chat edits per trip/day',
       'Save to dashboard',
     ],
     cta: 'Get started',
@@ -22,18 +25,42 @@ const plans = [
     period: '/month',
     description: 'Unlimited trips, smarter AI.',
     features: [
-      'Unlimited trips',
-      'Advanced AI with real links',
+      'Premium AI models',
+      'Unlimited trip generation',
       'Unlimited chat edits',
       'Priority generation',
-      'Export & share trips',
+      'Export PDF',
+      'Weather map layers',
     ],
-    cta: 'Start free trial',
+    cta: 'Upgrade to Premium',
     highlighted: true,
   },
 ];
 
 export default function PricingSection() {
+  const { isAuthenticated, user, openAuthModal } = useAuthStore();
+  const [loading, setLoading] = useState(false);
+
+  const handleCta = async (planName: string) => {
+    if (planName === 'Free') {
+      if (!isAuthenticated) openAuthModal('signup');
+      return;
+    }
+    // Premium
+    if (!isAuthenticated) {
+      openAuthModal('signup');
+      return;
+    }
+    if (user?.plan === 'premium') return;
+    setLoading(true);
+    try {
+      const res = await subscriptionAPI.createCheckoutSession();
+      if (res.success && res.url) window.location.href = res.url;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <motion.div
       id="pricing"
@@ -140,6 +167,8 @@ export default function PricingSection() {
             </div>
 
             <button
+              onClick={() => handleCta(plan.name)}
+              disabled={loading && plan.highlighted}
               style={{
                 width: '100%',
                 padding: '10px 16px',
@@ -151,9 +180,10 @@ export default function PricingSection() {
                 border: 'none',
                 background: plan.highlighted ? 'var(--primary-500)' : 'var(--navy-950)',
                 color: '#fff',
+                opacity: (loading && plan.highlighted) ? 0.7 : 1,
               }}
             >
-              {plan.cta}
+              {loading && plan.highlighted ? 'Redirecting...' : (user?.plan === 'premium' && plan.highlighted ? 'Current plan' : plan.cta)}
             </button>
           </motion.div>
         ))}

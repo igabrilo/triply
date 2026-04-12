@@ -1,8 +1,11 @@
+from datetime import datetime, timezone
+
 from flask import g, jsonify, request
 from app.routes import api_bp
 from app.utils.auth import require_auth
 from app.utils.rate_limit import limiter, plan_limit, _user_key
 from app.services.chat_service import ChatService
+from app.models.trip_edit import TripEdit
 
 
 @api_bp.route('/trips/<trip_id>/chat', methods=['GET'])
@@ -47,6 +50,7 @@ def send_chat_message(trip_id):
         user_id=str(user.id),
         content=data['content'],
         edit_scope=data.get('editScope'),
+        user_plan=getattr(user, 'plan', None),
     )
 
     if not result:

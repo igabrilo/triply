@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 from app import db
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 class ChatService:
     """Service for chat-based trip editing."""
 
-    MAX_EDITS_FREE = 5
+    MAX_EDITS_BASIC_PER_TRIP_PER_DAY = 5
 
     # ------------------------------------------------------------------
     # Threads
@@ -63,16 +64,24 @@ class ChatService:
     # ------------------------------------------------------------------
     @staticmethod
     def send_message(trip_id: str, user_id: str, content: str,
-                     edit_scope: Optional[dict] = None):
+                     edit_scope: Optional[dict] = None,
+                     user_plan: Optional[str] = None):
         """Process a user message: call AI, validate, apply edit, persist."""
         trip = Trip.query.filter_by(id=trip_id, user_id=user_id).first()
         if not trip:
             return None
 
-        # Check edit limit
-        edit_count = TripEdit.query.filter_by(trip_id=trip_id).count()
-        if edit_count >= ChatService.MAX_EDITS_FREE:
-            return {'error': 'edit_limit_reached'}
+        # Check edit limit — basic users: 5 edits per trip per day
+        if (user_plan or 'basic') != 'premium':
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            edit_count = (
+                TripEdit.query
+                .filter_by(trip_id=trip_id)
+                .filter(TripEdit.created_at >= today_start)
+                .count()
+            )
+            if edit_count >= ChatService.MAX_EDITS_BASIC_PER_TRIP_PER_DAY:
+                return {'error': 'edit_limit_reached'}
 
         # Ensure thread
         thread = (ChatThread.query

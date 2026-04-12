@@ -1,13 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageCircle, X, Send, Sparkles, Pencil } from 'lucide-react';
+import { MessageCircle, X, Send, Sparkles, Pencil, Crown } from 'lucide-react';
 import { useChatStore } from '@/store/chatStore';
+import { useAuthStore } from '@/store/authStore';
+import UpgradeModal from '@components/ui/UpgradeModal';
 
 const quickPrompts = ['Cheaper', 'Kid friendly', 'Reduce walking', 'Rainy day', 'More museums'];
 
 export default function ChatPanel() {
-  const { isOpen, messages, isLoading, editScope, toggleChat, closeChat, sendMessage } = useChatStore();
+  const { isOpen, messages, isLoading, editScope, editLimitReached, toggleChat, closeChat, sendMessage } = useChatStore();
   const [input, setInput] = useState('');
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const isPremium = useAuthStore((s) => s.user?.plan === 'premium');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -118,23 +122,51 @@ export default function ChatPanel() {
             </div>
 
             {/* Input */}
-            <div className="chat-input-bar">
-              <input
-                ref={inputRef}
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                placeholder="Type a message..."
-                className="chat-input"
-              />
-              <button onClick={handleSend} disabled={!input.trim() || isLoading} className="chat-send-btn">
-                <Send size={16} />
-              </button>
-            </div>
+            {editLimitReached && !isPremium ? (
+              <div style={{ padding: '12px 14px', borderTop: '1px solid var(--navy-100)', textAlign: 'center' }}>
+                <p style={{ fontSize: 12, color: 'var(--navy-500)', marginBottom: 8 }}>
+                  You've used all 5 free edits for today.
+                </p>
+                <button
+                  onClick={() => setShowUpgrade(true)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '8px 16px',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--primary-500)',
+                    color: '#fff',
+                    border: 'none',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Crown size={14} /> Upgrade to Premium
+                </button>
+              </div>
+            ) : (
+              <div className="chat-input-bar">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                  placeholder="Type a message..."
+                  className="chat-input"
+                />
+                <button onClick={handleSend} disabled={!input.trim() || isLoading} className="chat-send-btn">
+                  <Send size={16} />
+                </button>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
+
+      <UpgradeModal isOpen={showUpgrade} onClose={() => setShowUpgrade(false)} feature="chat_edits" />
     </>
   );
 }

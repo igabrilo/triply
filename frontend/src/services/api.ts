@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { TripFormData, EditScope } from '@/types';
+import type { TripFormData, EditScope, UsageLimits } from '@/types';
 import { supabase } from '@/services/supabase';
 
 const API_BASE_URL = '/api';
@@ -76,6 +76,27 @@ export const authAPI = {
     marketingOptIn?: boolean;
   }) {
     const { data } = await apiClient.put('/auth/me/notifications', payload);
+    return data;
+  },
+
+  async getUsageLimits(tripId?: string): Promise<{ success: boolean; plan: string; limits: UsageLimits }> {
+    const params = tripId ? { tripId } : {};
+    const { data } = await apiClient.get('/auth/usage-limits', { params });
+    return data;
+  },
+};
+
+// ------------------------------------------------------------------
+// Subscription / Stripe API
+// ------------------------------------------------------------------
+export const subscriptionAPI = {
+  async createCheckoutSession(): Promise<{ success: boolean; url?: string; message?: string }> {
+    const { data } = await apiClient.post('/subscriptions/checkout');
+    return data;
+  },
+
+  async createPortalSession(): Promise<{ success: boolean; url?: string; message?: string }> {
+    const { data } = await apiClient.post('/subscriptions/portal');
     return data;
   },
 };
