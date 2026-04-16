@@ -37,12 +37,12 @@ except ImportError:
 
 PLAN_LIMITS = {
     'trip_generate': {
-        'basic': '3 per hour',
-        'premium': '20 per hour',
+        'basic': '2 per day',
+        'premium': '100 per day',
     },
     'chat_edit': {
         'basic': '20 per hour',
-        'premium': '100 per hour',
+        'premium': '200 per hour',
     },
     'activity_generate': {
         'basic': '10 per day',

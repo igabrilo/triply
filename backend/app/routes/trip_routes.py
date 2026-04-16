@@ -959,6 +959,13 @@ def delete_trip(trip_id):
 @require_auth
 def export_trip_overview_pdf(trip_id):
     user = g.current_user
+    if (user.plan or 'basic') != 'premium':
+        return jsonify({
+            'success': False,
+            'message': 'PDF export is a Premium feature. Upgrade to access it.',
+            'error': 'premium_required',
+        }), 403
+
     trip = TripService.get_trip(trip_id, str(user.id))
     if not trip:
         return jsonify({'success': False, 'message': 'Trip not found'}), 404

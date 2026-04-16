@@ -43,12 +43,13 @@ GET  /api/trips/:id/stream (SSE) -> streams section-by-section AI generation
 - `auth_routes.py`: current user/profile/preferences/notifications
 - `trip_routes.py`: trip CRUD, SSE generation, budget/weather/overview/activity actions, analytics
 - `chat_routes.py`: chat history + scoped AI edits
+- `subscription_routes.py`: Stripe checkout session, customer portal, webhook handler
 
 ### Services layer
 
-- `ai_service.py`: typed OpenAI generation/chat calls (Pydantic schemas)
+- `ai_service.py`: typed OpenAI generation/chat calls (Pydantic schemas); three model tiers — `gpt-5.2` (premium), `gpt-4.1` (mid), `gpt-4.1-mini` (lite) for generation; `gpt-5-mini` for chat
 - `trip_service.py`: core persistence and section replacement/merge logic
-- `chat_service.py`: scoped edit workflow, diff persistence, free edit limit
+- `chat_service.py`: scoped edit workflow, diff persistence, plan-aware edit limits
 - `geocoding_service.py`: Google Places API v1 (primary) + legacy + Nominatim fallbacks, image fetching with Wikimedia/LoremFlickr fallback chain
 - `pdf_service.py`: overview PDF export
 - `image_storage_service.py`: Supabase Storage caching (`trip-images` bucket, WebP compression at 640px for items, 1600px for hero)
@@ -121,12 +122,14 @@ Core entities are normalized in `backend/app/models/`:
 
 ### Dashboard modules
 
-Dashboard is tab-driven (`Overview`, `Plan`, `Activities`, `Flights`, `Stays`, `Weather`, `Tips`, `Map`, `Profile`) with:
+Dashboard is tab-driven (`Overview`, `Plan`, `Activities`, `Flights`, `Stays`, `Weather`, `Tips`, `Map`, `Budget`, `Profile`) with:
 
 - Progressive generation UI while SSE sections arrive
 - Chat side panel for scoped AI edits
-- Leaflet-based map views with OpenWeather tile overlays
+- Leaflet-based map views with OpenWeather tile overlays (premium-gated)
 - Budget and overview editing flows backed by dedicated backend endpoints
+- `UpgradeModal` (`components/ui/UpgradeModal.tsx`) shown when a basic user hits a plan limit; redirects to Stripe Checkout
+- `SubscriptionPanel` inside the Profile tab shows current plan, usage, and upgrade/manage links
 
 ## API overview (current)
 
@@ -182,6 +185,12 @@ Chat and analytics routes:
 - `POST /trips/<trip_id>/chat`
 - `GET /analytics/activation`
 
+Subscription routes:
+
+- `POST /subscriptions/checkout` — create Stripe Checkout session (auth required)
+- `POST /subscriptions/portal` — create Stripe Customer Portal session (auth required)
+- `POST /webhooks/stripe` — Stripe webhook handler (no auth, verified by signature)
+
 ## Environment variables
 
 ### Backend (`backend/.env`)
@@ -189,7 +198,8 @@ Chat and analytics routes:
 Required for normal app usage:
 
 - `DATABASE_URL`: SQLAlchemy connection string
-- `OPENAI_API_KEY`: required for generation/chat
+- `XROUTE_AI_API_KEY`: required for generation/chat (routed via xroute.ai OpenAI-compatible proxy)
+- `OPENAI_BASE_URL` (default `https://api.xroute.ai/openai/v1`)
 - `SUPABASE_URL`: required for JWT verification on protected routes
 
 Common optional/operational vars:
@@ -197,12 +207,21 @@ Common optional/operational vars:
 - `MIGRATION_DATABASE_URL`: dedicated DB URL for Alembic migrations
 - `SUPABASE_SERVICE_ROLE_KEY`: enables image caching to Supabase Storage
 - `GOOGLE_MAPS_API_KEY`: enables Google Places geocoding and photo fetching (primary image source; falls back to Wikimedia/LoremFlickr without it)
-- `OPENAI_MODEL_GENERATION` (default `gpt-5.2`)
+- `OPENAI_MODEL_GENERATION` (default `gpt-5.2`) — used for premium-tier AI generation
+- `OPENAI_MODEL_GENERATION_MID` (default `gpt-4.1`) — mid-tier generation
+- `OPENAI_MODEL_GENERATION_LITE` (default `gpt-4.1-mini`) — lite/basic-tier generation
 - `OPENAI_MODEL_CHAT` (default `gpt-5-mini`)
 - `CORS_ORIGINS` (default `http://localhost:3000`)
 - `FEATURE_FIRST_PLAN_GUIDE` (default `true`)
 - `FEATURE_NEXT_BEST_ACTIONS` (default `true`)
 - `FEATURE_ACTIVATION_ANALYTICS` (default `true`)
+
+Stripe (optional — enables Premium subscription payments):
+
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PRICE_ID_PREMIUM`: Stripe price ID for the Premium plan
+- `FRONTEND_URL` (default `http://localhost:3000`): used in Stripe redirect URLs
 
 Use `backend/.env.example` as a starting point.
 
@@ -216,6 +235,20 @@ Use `backend/.env.example` as a starting point.
 - `VITE_FEATURE_ACTIVATION_ANALYTICS`
 
 Use `frontend/.env.example` as a starting point.
+
+## Plan tiers
+
+Two user plans with tiered rate limits enforced by `app/utils/rate_limit.py` (Flask-Limiter, keyed on user ID):
+
+| Feature | Basic | Premium |
+|---|---|---|
+| Trip generations | 2 / day | 100 / day |
+| Chat edits | 20 / hour | 200 / hour |
+| Activity generation | 10 / day | 50 / day |
+| Weather refresh | 10 / day | 50 / day |
+| Weather map overlay | — | Yes |
+
+Stripe integration upgrades `user.plan` from `basic` → `premium` on successful checkout and reverts it on cancellation/non-payment via webhook.
 
 ## Run with Docker
 

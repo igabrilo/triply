@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from flask import g, jsonify, request
 from app.routes import api_bp
 from app.utils.auth import require_auth
@@ -83,5 +85,54 @@ def update_user_notifications():
 
     db.session.commit()
     return jsonify({'success': True, 'user': user.to_dict()}), 200
+
+
+@api_bp.route('/auth/usage-limits', methods=['GET'])
+@require_auth
+def get_usage_limits():
+    """Return the user's current usage vs plan limits."""
+    from app.models.trip import Trip
+    from app.models.trip_edit import TripEdit
+
+    user = g.current_user
+    plan = user.plan or 'basic'
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    trips_today = Trip.query.filter(
+        Trip.user_id == user.id,
+        Trip.created_at >= today_start,
+    ).count()
+
+    # Per-trip edit counts for current trip (optional query param)
+    trip_id = request.args.get('tripId')
+    edits_today = 0
+    if trip_id:
+        edits_today = TripEdit.query.filter(
+            TripEdit.trip_id == trip_id,
+            TripEdit.created_at >= today_start,
+        ).count()
+
+    if plan == 'premium':
+        return jsonify({
+            'success': True,
+            'plan': 'premium',
+            'limits': {
+                'tripsPerDay': None,
+                'tripsUsedToday': trips_today,
+                'chatEditsPerTripPerDay': None,
+                'chatEditsUsedToday': edits_today,
+            },
+        }), 200
+
+    return jsonify({
+        'success': True,
+        'plan': 'basic',
+        'limits': {
+            'tripsPerDay': 2,
+            'tripsUsedToday': trips_today,
+            'chatEditsPerTripPerDay': 5,
+            'chatEditsUsedToday': edits_today,
+        },
+    }), 200
 
 

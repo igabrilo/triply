@@ -4,7 +4,9 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Maximize2, MapPin, ExternalLink, Map as MapIcon, CloudSun } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
+import { useAuthStore } from '@/store/authStore';
 import Modal from '@components/ui/Modal';
+import UpgradeModal from '@components/ui/UpgradeModal';
 import Chip from '@components/ui/Chip';
 import WeatherParticlesLayer from '@components/dashboard/WeatherParticlesLayer';
 import WeatherTimeSlider from '@components/dashboard/WeatherTimeSlider';
@@ -344,6 +346,8 @@ function SidebarMap() {
   const [imageErrorByActivityId, setImageErrorByActivityId] = useState<Record<string, boolean>>({});
   const [fallbackStayPoint, setFallbackStayPoint] = useState<FallbackStayPoint | null>(null);
   const [weatherLayer, setWeatherLayer] = useState<string | null>(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const isPremium = useAuthStore((s) => s.user?.plan === 'premium');
 
   const allEntries = useMemo<MapActivityEntry[]>(() => {
     if (!currentTrip) return [];
@@ -466,6 +470,10 @@ function SidebarMap() {
 
   const hasWeatherApi = Boolean(OWM_API_KEY);
   const handleToggleWeather = () => {
+    if (!isPremium) {
+      setShowUpgrade(true);
+      return;
+    }
     if (!hasWeatherApi) return;
     setFocusedId(null);
     setWeatherLayer((prev) => (prev ? null : 'TA2'));
@@ -588,11 +596,10 @@ function SidebarMap() {
               <button
                 className={`map-expanded-weather-toggle ${weatherLayer ? 'map-expanded-weather-toggle-active' : ''}`}
                 onClick={handleToggleWeather}
-                disabled={!hasWeatherApi}
-                title={!hasWeatherApi ? 'Set VITE_OPENWEATHERMAP_API_KEY to enable weather tiles' : undefined}
+                title={!isPremium ? 'Upgrade to Premium for weather layers' : (!hasWeatherApi ? 'Set VITE_OPENWEATHERMAP_API_KEY to enable weather tiles' : undefined)}
               >
                 <CloudSun size={14} />
-                {!hasWeatherApi ? 'Weather unavailable' : weatherLayer ? 'Weather on' : 'Weather off'}
+                {weatherLayer ? 'Weather on' : 'Weather off'}
               </button>
             </div>
             {isExpanded && mappableEntries.length > 0 && (
@@ -875,6 +882,8 @@ function SidebarMap() {
           </div>
         </div>
       </Modal>
+
+      <UpgradeModal isOpen={showUpgrade} onClose={() => setShowUpgrade(false)} feature="weather_map" />
     </>
   );
 }

@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { User, Mail, Settings, CreditCard, Download, Trash2, Crown, MapPin, Bell, Loader } from 'lucide-react';
+import { User, Mail, Settings, CreditCard, Download, Trash2, Crown, MapPin, Bell, Loader, Sparkles, Zap, Map, MessageCircle } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useTripStore } from '@/store/tripStore';
-import { analyticsAPI, tripAPI, authAPI } from '@/services/api';
+import { analyticsAPI, tripAPI, authAPI, subscriptionAPI } from '@/services/api';
 import { emitGuideChanged, resetGuideState } from '@/utils/firstPlanGuide';
 import { featureFlags } from '@/config/featureFlags';
 import Button from '@components/ui/Button';
 import Chip from '@components/ui/Chip';
+import type { UsageLimits } from '@/types';
 
 const interestOptions = ['Museums', 'Food & Wine', 'Nature', 'Nightlife', 'Shopping', 'History', 'Art', 'Beach'];
 
@@ -59,6 +60,127 @@ function activationToCsv(metrics: ActivationMetrics): string {
 }
 
 const paceOptions = ['relaxed', 'balanced', 'packed'] as const;
+
+const premiumPerks = [
+  { icon: Sparkles, label: 'GPT 5.2 for all generation' },
+  { icon: Zap, label: 'Unlimited trips per day' },
+  { icon: MessageCircle, label: 'Unlimited chat edits' },
+  { icon: Crown, label: 'Priority generation' },
+  { icon: Download, label: 'PDF export' },
+  { icon: Map, label: 'Weather map layers' },
+];
+
+function SubscriptionPanel() {
+  const { user } = useAuthStore();
+  const currentTrip = useTripStore((s) => s.currentTrip);
+  const isPremium = user?.plan === 'premium';
+  const [limits, setLimits] = useState<UsageLimits | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
+
+  useEffect(() => {
+    authAPI.getUsageLimits(currentTrip?.id).then((res) => {
+      if (res.success) setLimits(res.limits);
+    }).catch(() => {});
+  }, [currentTrip?.id]);
+
+  const handleUpgrade = async () => {
+    setLoading(true);
+    try {
+      const res = await subscriptionAPI.createCheckoutSession();
+      if (res.success && res.url) window.location.href = res.url;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleManage = async () => {
+    setPortalLoading(true);
+    try {
+      const res = await subscriptionAPI.createPortalSession();
+      if (res.success && res.url) window.location.href = res.url;
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Plan card */}
+      <div style={{
+        padding: '20px 24px',
+        borderRadius: 'var(--radius-lg)',
+        background: isPremium ? 'linear-gradient(135deg, var(--navy-900), var(--navy-950))' : 'var(--surface-dim)',
+        border: isPremium ? '1px solid var(--navy-700)' : '1px solid var(--navy-100)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <Crown size={18} style={{ color: isPremium ? 'var(--primary-400)' : 'var(--primary-600)' }} />
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: isPremium ? '#fff' : 'var(--navy-900)' }}>
+            {isPremium ? 'Premium Plan' : 'Free Plan'}
+          </h3>
+          {isPremium && (
+            <span style={{
+              fontSize: 11, fontWeight: 600, color: 'var(--primary-300)',
+              background: 'rgba(99,102,241,0.15)', padding: '2px 8px',
+              borderRadius: 'var(--radius-full)',
+            }}>Active</span>
+          )}
+        </div>
+        <p style={{ fontSize: 14, color: isPremium ? 'rgba(255,255,255,0.7)' : 'var(--navy-600)', marginBottom: 16 }}>
+          {isPremium
+            ? 'Unlimited trips, chat edits, and GPT 5.2 for all generation.'
+            : '2 trips per day, 5 chat edits per trip per day.'}
+        </p>
+
+        {/* Usage for basic users */}
+        {!isPremium && limits && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+            <div style={{ padding: '10px 12px', background: 'var(--navy-50)', borderRadius: 'var(--radius-md)' }}>
+              <p style={{ fontSize: 11, color: 'var(--navy-500)', marginBottom: 2 }}>Trips today</p>
+              <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-900)' }}>
+                {limits.tripsUsedToday} <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--navy-400)' }}>/ {limits.tripsPerDay}</span>
+              </p>
+            </div>
+            <div style={{ padding: '10px 12px', background: 'var(--navy-50)', borderRadius: 'var(--radius-md)' }}>
+              <p style={{ fontSize: 11, color: 'var(--navy-500)', marginBottom: 2 }}>Chat edits today</p>
+              <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-900)' }}>
+                {limits.chatEditsUsedToday} <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--navy-400)' }}>/ {limits.chatEditsPerTripPerDay}</span>
+              </p>
+            </div>
+          </div>
+        )}
+
+        {isPremium ? (
+          <Button size="sm" variant="ghost" onClick={handleManage} disabled={portalLoading}
+            style={{ color: 'rgba(255,255,255,0.8)', borderColor: 'rgba(255,255,255,0.2)' }}>
+            <CreditCard size={14} /> {portalLoading ? 'Loading...' : 'Manage subscription'}
+          </Button>
+        ) : (
+          <Button size="sm" onClick={handleUpgrade} disabled={loading}>
+            <Crown size={14} /> {loading ? 'Redirecting...' : 'Upgrade to Premium — $9/mo'}
+          </Button>
+        )}
+      </div>
+
+      {/* Premium perks for free users */}
+      {!isPremium && (
+        <div className="item-card" style={{ padding: '16px 20px' }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--navy-500)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 12 }}>
+            Premium includes
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {premiumPerks.map(({ icon: PerkIcon, label }) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <PerkIcon size={13} style={{ color: 'var(--primary-500)', flexShrink: 0 }} />
+                <span style={{ fontSize: 13, color: 'var(--navy-700)' }}>{label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+}
 
 export default function ProfileSection() {
   const navigate = useNavigate();
@@ -356,23 +478,7 @@ export default function ProfileSection() {
       )}
 
       {activeSection === 'subscription' && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="subscription-card">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <Crown size={18} style={{ color: 'var(--primary-600)' }} />
-              <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--navy-900)' }}>Free Plan</h3>
-            </div>
-            <p style={{ fontSize: 14, color: 'var(--navy-600)', marginBottom: 16 }}>3 trip generations/month, 5 chat edits/trip.</p>
-            <Button size="sm" icon={<Crown size={14} />}>Upgrade to Premium</Button>
-          </div>
-          <div className="item-card">
-            <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--navy-800)', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <CreditCard size={15} /> Payment method
-            </h3>
-            <p style={{ fontSize: 14, color: 'var(--navy-500)' }}>No payment method on file.</p>
-            <button className="btn-link" style={{ marginTop: 8 }}>Add payment method</button>
-          </div>
-        </motion.div>
+        <SubscriptionPanel />
       )}
 
       {activeSection === 'trips' && (

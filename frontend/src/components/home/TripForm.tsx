@@ -4,12 +4,13 @@ import { motion } from 'framer-motion';
 import { Users, Sparkles, Navigation, Loader } from 'lucide-react';
 import { useTripStore } from '@/store/tripStore';
 import { useAuthStore } from '@/store/authStore';
-import { geocodeAPI } from '@/services/api';
+import { geocodeAPI, authAPI } from '@/services/api';
 import Input from '@components/ui/Input';
 import Button from '@components/ui/Button';
 import Chip from '@components/ui/Chip';
 import DateRangePicker from '@components/ui/DateRangePicker';
 import DestinationAutocomplete from '@components/ui/DestinationAutocomplete';
+import UpgradeModal from '@components/ui/UpgradeModal';
 import type { BudgetLevel } from '@/types';
 
 const interestOptions = [
@@ -38,13 +39,14 @@ const dietaryOptions = ['Vegetarian', 'Vegan', 'Halal', 'Kosher', 'Gluten-free']
 export default function TripForm() {
   const navigate = useNavigate();
   const { formData, updateFormData, generateTrip, clearRememberedDefaults } = useTripStore();
-  const { isAuthenticated, openAuthModal } = useAuthStore();
+  const { isAuthenticated, user, openAuthModal } = useAuthStore();
   const [destinationInput, setDestinationInput] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showPreferences, setShowPreferences] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [detectingLocation, setDetectingLocation] = useState(false);
   const [locationError, setLocationError] = useState('');
+  const [showUpgrade, setShowUpgrade] = useState(false);
   
   const ref = useRef(null);
 
@@ -148,6 +150,19 @@ export default function TripForm() {
     if (!validate()) return;
 
     const doGenerate = async () => {
+      // Check daily trip limit for basic users
+      if (user && user.plan !== 'premium') {
+        try {
+          const usage = await authAPI.getUsageLimits();
+          if (usage.limits.tripsPerDay !== null && usage.limits.tripsUsedToday >= usage.limits.tripsPerDay) {
+            setShowUpgrade(true);
+            return;
+          }
+        } catch {
+          // If limit check fails, let the backend enforce it
+        }
+      }
+
       setIsSubmitting(true);
       await generateTrip();
       setIsSubmitting(false);
@@ -385,6 +400,8 @@ export default function TripForm() {
           {isAuthenticated ? 'Your trip will be saved to your dashboard.' : "You'll sign in to save your trip to your dashboard."}
         </p>
       </div>
+
+      <UpgradeModal isOpen={showUpgrade} onClose={() => setShowUpgrade(false)} feature="trip_limit" />
     </motion.div>
   );
 }
