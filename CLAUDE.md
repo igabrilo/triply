@@ -13,7 +13,8 @@ Triply is an AI-powered trip planning application. Users describe a trip, and th
 - **Database**: PostgreSQL (SQLite for tests)
 - **Auth**: Supabase Auth (frontend SDK) + JWT verification via JWKS (backend)
 - **Image APIs**: Google Places API v1 (primary) + legacy fallback, Wikimedia Commons/Wikipedia, LoremFlickr (last resort)
-- **Optional APIs**: OpenWeatherMap (weather overlays), Supabase Storage (image caching at `trip-images` bucket)
+- **Optional APIs**: OpenWeatherMap (weather overlays), Supabase Storage (image caching at `trip-images` bucket), Stripe (Premium subscription payments)
+- **AI routing**: xroute.ai proxy (OpenAI-compatible) — three model tiers: `gpt-5.2` (premium generation), `gpt-4.1` (mid), `gpt-4.1-mini` (lite/basic); `gpt-5-mini` (chat)
 
 ## Common Commands
 
@@ -70,11 +71,15 @@ React SPA (Zustand stores) → Axios API client → Flask API → Services → S
 
 ### Key Patterns
 - **Backend services layer**: Routes delegate to `app/services/` — `ai_service.py` (OpenAI calls), `trip_service.py` (persistence), `chat_service.py` (chat + scoped edits), `geocoding_service.py`, `pdf_service.py`
+- **Route modules**: `main_routes.py` (health/flags), `auth_routes.py` (profile), `trip_routes.py` (CRUD + SSE), `chat_routes.py` (chat + edits), `subscription_routes.py` (Stripe checkout/portal/webhook)
 - **AI response schemas**: Pydantic models in `app/schemas/ai_schemas.py` define the shape of OpenAI responses
 - **Frontend stores**: `authStore.ts` (user/session), `tripStore.ts` (trip form, generation state, section data), `chatStore.ts` (chat history, panel state)
 - **Feature flags**: Runtime flags from `GET /api/feature-flags`, bootstrapped in `main.tsx` before app render
 - **Path aliases**: `@/components`, `@/pages`, `@/hooks`, `@/store`, `@/services`, `@/utils`, `@/types`, `@/config` (configured in both `vite.config.ts` and `tsconfig.json`)
 - **Chat-based edits**: Chat messages can trigger scoped modifications to trip sections via `chat_service.py`
+- **Plan-based limits** (`app/utils/rate_limit.py`): `basic` (2 trips/day, 20 chat edits/hour, 10 activities/day) vs `premium` (100 trips/day, 200 chat edits/hour, 50 activities/day). Uses Flask-Limiter keyed on user ID; degrades gracefully if not installed.
+- **Stripe integration** (`subscription_routes.py`): `POST /api/subscriptions/checkout` creates a Checkout Session; `POST /api/subscriptions/portal` opens Customer Portal; `POST /api/webhooks/stripe` handles `checkout.session.completed` and `customer.subscription.updated/deleted` to flip `user.plan` between `basic` and `premium`.
+- **UpgradeModal** (`components/ui/UpgradeModal.tsx`): shown when a basic user hits a gated feature (trip limit, weather map, chat edits). Redirects to Stripe Checkout via `POST /api/subscriptions/checkout`.
 
 ### Image Pipeline
 Images are fetched during trip generation (not at runtime) and permanently cached in Supabase Storage as WebP.
@@ -92,7 +97,13 @@ Images are fetched during trip generation (not at runtime) and permanently cache
 **Migrations:** The `enrich_plan_items()` migration fix (`d4a1c5f2e9b0`) checks column existence before adding — safe to run on databases where the column already exists.
 
 ### Frontend Dashboard
-The dashboard (`Dashboard.tsx`) has tabbed sections: Overview, Plan, Activities, Flights, Stays, Weather, Tips, Map, Budget, Profile — each in `components/dashboard/`.
+The dashboard (`Dashboard.tsx`) has tabbed sections: Overview, Plan, Activities, Flights, Stays, Weather, Tips, Map, Budget, Profile — each in `components/dashboard/`. The Profile tab contains a `SubscriptionPanel` component showing current plan, usage counters, and upgrade/manage flows.
 
 ### Backend Config
 Three environment classes in `config/config.py`: Development, Production, Testing. Config validates required env vars on load.
+
+Key optional env vars added for the premium tier:
+- `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_PREMIUM` — enable Stripe payments
+- `FRONTEND_URL` — used in Stripe redirect URLs (default `http://localhost:3000`)
+- `XROUTE_AI_API_KEY` / `OPENAI_BASE_URL` — xroute.ai proxy for multi-model access
+- `OPENAI_MODEL_GENERATION_MID` / `OPENAI_MODEL_GENERATION_LITE` — mid and lite model tiers
