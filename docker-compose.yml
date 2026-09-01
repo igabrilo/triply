@@ -1,29 +1,42 @@
-version: '3.8'
-
 services:
   backend:
     build: ./backend
     container_name: triply-backend
     ports:
       - "5001:5000"
+    env_file:
+      - ./backend/.env
     environment:
       - FLASK_ENV=development
-      - DATABASE_URL=sqlite:///triply.db
     volumes:
       - ./backend:/app
-    command: python run.py
+    command: >
+      sh -c "pip install --quiet -r requirements.txt && (flask db upgrade || echo 'DB migration warning - continuing') && python run.py"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: on-failure
 
   frontend:
     build: ./frontend
     container_name: triply-frontend
     ports:
       - "3000:3000"
+    env_file:
+      - ./frontend/.env
     environment:
       - VITE_API_URL=/api
       - VITE_PROXY_TARGET=http://backend:5000
+      - CHOKIDAR_USEPOLLING=1
+      - WATCHPACK_POLLING=1
+      - CHOKIDAR_INTERVAL=200
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    command: npm run dev -- --host
+    command: sh -c "npm install --legacy-peer-deps && npm run dev -- --host"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy

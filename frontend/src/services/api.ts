@@ -1,38 +1,292 @@
-import axios from 'axios'
+import axios from 'axios';
+import type { TripFormData, EditScope, UsageLimits } from '@/types';
+import { supabase } from '@/services/supabase';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
+const API_BASE_URL = '/api';
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
-})
+});
 
-// Request interceptor
+// Request interceptor – attach Supabase access token
 apiClient.interceptors.request.use(
-  (config) => {
-    // Add auth token if available
-    const token = localStorage.getItem('token')
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+  async (config) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      config.headers.Authorization = `Bearer ${session.access_token}`;
     }
-    return config
+    return config;
   },
-  (error) => {
-    return Promise.reject(error)
-  }
-)
+  (error) => Promise.reject(error),
+);
 
 // Response interceptor
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Handle unauthorized access
-      localStorage.removeItem('token')
-      window.location.href = '/login'
+      // Session may have expired – Supabase client will auto-refresh
+      // on next getSession() call, so no need to clear localStorage.
     }
-    return Promise.reject(error)
-  }
-)
+    return Promise.reject(error);
+  },
+);
+
+// ------------------------------------------------------------------
+// Geocoding API
+// ------------------------------------------------------------------
+export const geocodeAPI = {
+  async reverseGeocode(lat: number, lng: number) {
+    const { data } = await apiClient.get('/geocode/reverse', { params: { lat, lng } });
+    return data;
+  },
+};
+
+// ------------------------------------------------------------------
+// Auth API (profile fetch + updates – actual auth handled by Supabase client)
+// ------------------------------------------------------------------
+export const authAPI = {
+  async getCurrentUser() {
+    const { data } = await apiClient.get('/auth/me');
+    return data;
+  },
+
+  async updateProfile(payload: { name: string }) {
+    const { data } = await apiClient.put('/auth/me', payload);
+    return data;
+  },
+
+  async updatePreferences(payload: {
+    interests?: string[];
+    defaultPace?: string;
+    defaultHomeAirport?: string;
+    rememberPreferences?: boolean;
+  }) {
+    const { data } = await apiClient.put('/auth/me/preferences', payload);
+    return data;
+  },
+
+  async updateNotifications(payload: {
+    priceAlerts?: boolean;
+    tripReminders?: boolean;
+    productUpdates?: boolean;
+    marketingOptIn?: boolean;
+  }) {
+    const { data } = await apiClient.put('/auth/me/notifications', payload);
+    return data;
+  },
+
+  async getUsageLimits(tripId?: string): Promise<{ success: boolean; plan: string; limits: UsageLimits }> {
+    const params = tripId ? { tripId } : {};
+    const { data } = await apiClient.get('/auth/usage-limits', { params });
+    return data;
+  },
+};
+
+// ------------------------------------------------------------------
+// Subscription / Stripe API
+// ------------------------------------------------------------------
+export const subscriptionAPI = {
+  async createCheckoutSession(): Promise<{ success: boolean; url?: string; message?: string }> {
+    const { data } = await apiClient.post('/subscriptions/checkout');
+    return data;
+  },
+
+  async createPortalSession(): Promise<{ success: boolean; url?: string; message?: string }> {
+    const { data } = await apiClient.post('/subscriptions/portal');
+    return data;
+  },
+};
+
+// ------------------------------------------------------------------
+// Analytics API
+// ------------------------------------------------------------------
+export const analyticsAPI = {
+  async getActivationMetrics(days = 30) {
+    const { data } = await apiClient.get('/analytics/activation', { params: { days } });
+    return data;
+  },
+};
+
+// ------------------------------------------------------------------
+// Trip API
+// ------------------------------------------------------------------
+export const tripAPI = {
+  async createTrip(formData: TripFormData) {
+    const { data } = await apiClient.post('/trips', { formData });
+    return data;
+  },
+
+  async getTrips() {
+    const { data } = await apiClient.get('/trips');
+    return data;
+  },
+
+  async getTrip(tripId: string) {
+    const { data } = await apiClient.get(`/trips/${tripId}`);
+    return data;
+  },
+
+  async updateTrip(tripId: string, updates: Record<string, unknown>) {
+    const { data } = await apiClient.put(`/trips/${tripId}`, updates);
+    return data;
+  },
+
+  async deleteTrip(tripId: string) {
+    const { data } = await apiClient.delete(`/trips/${tripId}`);
+    return data;
+  },
+
+  async exportTripPdf(tripId: string): Promise<Blob> {
+    const { data } = await apiClient.get(`/trips/${tripId}/overview/pdf`, { responseType: 'blob' });
+    return data as Blob;
+  },
+
+  /**
+   * Open an SSE connection to stream trip generation progress.
+   *
+   * Returns a Promise<EventSource>. The caller should listen to:
+   *   - 'status'        → { phase: string }
+   *   - 'section_ready' → { section: string, data: any[] }
+   *   - 'done'          → { tripId: string }
+   *   - 'error'         → { message: string }
+   */
+  async streamGeneration(tripId: string): Promise<EventSource> {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token ?? '';
+    const url = `${API_BASE_URL}/trips/${tripId}/stream${token ? `?token=${token}` : ''}`;
+    return new EventSource(url);
+  },
+
+  async selectPrimaryFlight(tripId: string, flightId: string) {
+    const { data } = await apiClient.put(`/trips/${tripId}/flights/${flightId}/select`);
+    return data;
+  },
+
+  async selectPrimaryStay(tripId: string, stayId: string) {
+    const { data } = await apiClient.put(`/trips/${tripId}/stays/${stayId}/select`);
+    return data;
+  },
+
+  async addActivityToDay(tripId: string, activityId: string, dayNumber: number) {
+    const { data } = await apiClient.post(`/trips/${tripId}/activities/${activityId}/add-to-day`, { dayNumber });
+    return data;
+  },
+
+  async generateMoreActivities(tripId: string, category?: string) {
+    const { data } = await apiClient.post(`/trips/${tripId}/activities/generate-more`, { category });
+    return data;
+  },
+
+  async updateActivityStatus(tripId: string, activityId: string, status: 'suggested' | 'saved' | 'dismissed') {
+    const { data } = await apiClient.put(`/trips/${tripId}/activities/${activityId}/status`, { status });
+    return data;
+  },
+
+  async returnPlanItemToBucket(tripId: string, itemId: string) {
+    const { data } = await apiClient.post(`/trips/${tripId}/plan-items/${itemId}/return-to-bucket`);
+    return data;
+  },
+
+  async autofillDay(tripId: string, dayNumber: number, limit = 3) {
+    const { data } = await apiClient.post(`/trips/${tripId}/days/${dayNumber}/autofill`, { limit });
+    return data;
+  },
+
+  async refreshWeather(tripId: string) {
+    const { data } = await apiClient.post(`/trips/${tripId}/weather/refresh`);
+    return data;
+  },
+
+  async getNotes(tripId: string) {
+    const { data } = await apiClient.get(`/trips/${tripId}/notes`);
+    return data;
+  },
+
+  async updateNotes(tripId: string, notes: string) {
+    const { data } = await apiClient.put(`/trips/${tripId}/notes`, { notes });
+    return data;
+  },
+
+  async updateOverviewImage(tripId: string, imageUrl: string) {
+    const { data } = await apiClient.put(`/trips/${tripId}/overview/image`, { imageUrl });
+    return data;
+  },
+
+  async updateOverviewDescription(tripId: string, description: string) {
+    const { data } = await apiClient.put(`/trips/${tripId}/overview/description`, { description });
+    return data;
+  },
+
+  async trackUsageEvent(
+    tripId: string,
+    eventName: string,
+    eventProps?: Record<string, unknown>,
+  ) {
+    const { data } = await apiClient.post(`/trips/${tripId}/events`, {
+      eventName,
+      eventProps: eventProps || {},
+    });
+    return data;
+  },
+
+  async getBudget(tripId: string) {
+    const { data } = await apiClient.get(`/trips/${tripId}/budget`);
+    return data;
+  },
+
+  async addBudgetEntry(
+    tripId: string,
+    payload: { category: string; amount: number; currency?: string; date: string; note?: string },
+  ) {
+    const { data } = await apiClient.post(`/trips/${tripId}/budget`, payload);
+    return data;
+  },
+
+  async deleteBudgetEntry(tripId: string, entryId: string) {
+    const { data } = await apiClient.delete(`/trips/${tripId}/budget/${entryId}`);
+    return data;
+  },
+
+  async updateBudgetEntry(
+    tripId: string,
+    entryId: string,
+    payload: { category?: string; amount?: number; currency?: string; date?: string; note?: string },
+  ) {
+    const { data } = await apiClient.put(`/trips/${tripId}/budget/${entryId}`, payload);
+    return data;
+  },
+};
+
+// ------------------------------------------------------------------
+// Chat API
+// ------------------------------------------------------------------
+export const chatAPI = {
+  async getHistory(tripId: string) {
+    const { data } = await apiClient.get(`/trips/${tripId}/chat`);
+    return data;
+  },
+
+  async sendMessage(tripId: string, content: string, editScope?: EditScope) {
+    let targetRefType: string | undefined;
+    if (editScope?.itemId) {
+      const typeMap: Record<string, string> = { plan: 'plan_item', flights: 'flight_option', stays: 'stay_option' };
+      targetRefType = typeMap[editScope.section] || 'plan_item';
+    }
+    const { data } = await apiClient.post(`/trips/${tripId}/chat`, {
+      content,
+      editScope: editScope
+        ? {
+          section: editScope.section,
+          dayNumber: editScope.dayNumber,
+          targetRefType,
+          targetRefId: editScope.itemId,
+        }
+        : undefined,
+    });
+    return data;
+  },
+};
